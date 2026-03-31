@@ -406,9 +406,11 @@ def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
 
     # Process all plays
     all_plays = plays.get("allPlays", [])
-    # Track which at-bat number each batter is at within each inning for "through the order"
-    # A player can bat multiple times in extra innings or big innings
     player_inning_count = {}  # (player_id, inning) -> count
+
+    # Track each player's most recent at-bat so we can mark them as scored later
+    # Key: player_id -> most recent AtBat object (the one they're currently on base from)
+    player_last_at_bat = {}  # player_id -> AtBat
 
     for play in all_plays:
         about = play.get("about", {})
@@ -460,6 +462,22 @@ def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
                     if at_bat.out_number is None:
                         at_bat.out_number = r.get("movement", {}).get("outNumber")
                 break
+
+        # Track this batter's at-bat if they reached base
+        if at_bat.bases_reached > 0:
+            player_last_at_bat[batter_id] = at_bat
+
+        # Check ALL runners in this play for scoring — update their at-bat cells
+        for r in play.get("runners", []):
+            movement = r.get("movement", {})
+            if movement.get("end") == "score" and not movement.get("isOut", False):
+                runner_id = r.get("details", {}).get("runner", {}).get("id")
+                if runner_id and runner_id in player_last_at_bat:
+                    player_last_at_bat[runner_id].bases_reached = 4
+                    del player_last_at_bat[runner_id]  # they scored, no longer on base
+                elif runner_id == batter_id:
+                    # Batter scored on their own hit (HR, inside-the-park, etc.)
+                    at_bat.bases_reached = 4
 
         # Parse runner advancements (other runners on base)
         at_bat.runner_advancements = _parse_runner_advancements(play, at_bat_index)
