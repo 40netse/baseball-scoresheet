@@ -34,7 +34,7 @@ const GRID_LIGHT = '#c4b9aa';
 const PAPER = '#fcf9f3';
 const PAPER_ALT = '#f6f1e7';
 const ACCENT = '#b22222';    // out numbers, end-of-inning arrow
-const SCORE_FILL = '#2a2520';
+const SCORE_FILL = '#b22222';  // bold red for scored runs — easy to spot
 const HIT_REACHED = '#2e6b2e'; // green tint for reached-base sidebar highlight
 const REACH_BG = '#d8ecd8';
 const FLASH_BG = '#fff4b0';  // yellow flash for changed cells
@@ -232,14 +232,15 @@ const ScoresheetRenderer = {
 
         const scored = (ab.bases_reached || 0) >= 4;
 
-        // Draw diamond
+        // Draw diamond — bold red fill when runner scores
         const dPath = `M${pts.top[0]},${pts.top[1]}L${pts.right[0]},${pts.right[1]}` +
             `L${pts.bot[0]},${pts.bot[1]}L${pts.left[0]},${pts.left[1]}Z`;
-        const diamond = this._path(g, dPath, scored ? SCORE_FILL : 'none', INK, 1.2);
+        const diamond = this._path(g, dPath, scored ? SCORE_FILL : 'none',
+            scored ? SCORE_FILL : INK, scored ? 2 : 1.2);
 
         // Bold base-path lines for bases reached
         const basesReached = ab.bases_reached || 0;
-        const pathColor = scored ? '#f5f0e8' : INK;
+        const pathColor = scored ? '#fff' : INK;
         if (basesReached >= 1) this._seg(g, pts.bot, pts.right, pathColor, 3);
         if (basesReached >= 2) this._seg(g, pts.right, pts.top, pathColor, 3);
         if (basesReached >= 3) this._seg(g, pts.top, pts.left, pathColor, 3);
