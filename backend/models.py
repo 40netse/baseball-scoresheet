@@ -95,11 +95,30 @@ class InningTotals:
 
 
 @dataclass
+class PitcherLine:
+    """A pitcher's game line for the pitching summary box."""
+    name: str = ""
+    player_id: int = 0
+    jersey_number: str = ""
+    ip: str = "0"           # Innings pitched (e.g., "5.0", "2.2")
+    hits: int = 0
+    runs: int = 0
+    earned_runs: int = 0
+    walks: int = 0
+    strikeouts: int = 0
+    home_runs: int = 0
+    pitches: int = 0
+    strikes: int = 0
+    decision: str = ""      # "W", "L", "S", "H", or ""
+
+
+@dataclass
 class TeamScorecard:
     """Complete scorecard for one team."""
     team_name: str = ""
     team_abbreviation: str = ""
     players: list[PlayerLine] = field(default_factory=list)
+    pitchers: list[PitcherLine] = field(default_factory=list)
     inning_totals: list[InningTotals] = field(default_factory=list)
     total_runs: int = 0
     total_hits: int = 0
@@ -110,6 +129,7 @@ class TeamScorecard:
             "team_name": self.team_name,
             "team_abbreviation": self.team_abbreviation,
             "players": [p.to_dict() for p in self.players],
+            "pitchers": [asdict(p) for p in self.pitchers],
             "inning_totals": [asdict(i) for i in self.inning_totals],
             "total_runs": self.total_runs,
             "total_hits": self.total_hits,

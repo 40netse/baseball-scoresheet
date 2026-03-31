@@ -118,9 +118,89 @@
         ScoresheetRenderer.render(awaySvg, away, totalInnings);
         ScoresheetRenderer.render(homeSvg, home, totalInnings);
 
+        // Pitcher boxes
+        renderPitcherBox(document.getElementById('away-pitchers'), away);
+        renderPitcherBox(document.getElementById('home-pitchers'), home);
+
         // Linescore
         renderLinescore(sc, totalInnings);
     }
+
+    // ─── Pitcher Box ────────────────────────────────────────
+
+    function renderPitcherBox(container, teamData) {
+        const pitchers = teamData.pitchers || [];
+        if (pitchers.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        const cols = ['PITCHER', 'IP', 'H', 'R', 'ER', 'BB', 'K', 'HR', 'PC-ST'];
+
+        let html = '<h3>Pitching</h3><table><thead><tr>';
+        cols.forEach(c => { html += `<th>${c}</th>`; });
+        html += '</tr></thead><tbody>';
+
+        // Totals accumulators
+        let totIP = 0, totH = 0, totR = 0, totER = 0, totBB = 0, totK = 0, totHR = 0, totPC = 0, totST = 0;
+
+        pitchers.forEach(p => {
+            const decision = p.decision
+                ? `<span class="decision decision-${p.decision}">${p.decision}</span>`
+                : '';
+            const nameCell = `#${p.jersey_number || '?'} ${p.name}${decision}`;
+            const pcStr = `<span class="pitch-count">${p.pitches}-${p.strikes}</span>`;
+
+            html += '<tr>';
+            html += `<td>${nameCell}</td>`;
+            html += `<td>${p.ip}</td>`;
+            html += `<td>${p.hits}</td>`;
+            html += `<td>${p.runs}</td>`;
+            html += `<td>${p.earned_runs}</td>`;
+            html += `<td>${p.walks}</td>`;
+            html += `<td>${p.strikeouts}</td>`;
+            html += `<td>${p.home_runs}</td>`;
+            html += `<td>${pcStr}</td>`;
+            html += '</tr>';
+
+            // Parse IP for totals (e.g., "5.2" means 5 and 2/3)
+            const ipParts = String(p.ip).split('.');
+            const wholeInnings = parseInt(ipParts[0] || '0');
+            const thirds = parseInt(ipParts[1] || '0');
+            totIP += wholeInnings * 3 + thirds;
+
+            totH += p.hits || 0;
+            totR += p.runs || 0;
+            totER += p.earned_runs || 0;
+            totBB += p.walks || 0;
+            totK += p.strikeouts || 0;
+            totHR += p.home_runs || 0;
+            totPC += p.pitches || 0;
+            totST += p.strikes || 0;
+        });
+
+        // Totals row
+        const totalIPWhole = Math.floor(totIP / 3);
+        const totalIPThirds = totIP % 3;
+        const totalIPStr = `${totalIPWhole}.${totalIPThirds}`;
+
+        html += '<tr class="totals-row">';
+        html += `<td>TOTALS</td>`;
+        html += `<td>${totalIPStr}</td>`;
+        html += `<td>${totH}</td>`;
+        html += `<td>${totR}</td>`;
+        html += `<td>${totER}</td>`;
+        html += `<td>${totBB}</td>`;
+        html += `<td>${totK}</td>`;
+        html += `<td>${totHR}</td>`;
+        html += `<td><span class="pitch-count">${totPC}-${totST}</span></td>`;
+        html += '</tr>';
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    // ─── Linescore ────────────────────────────────────────────
 
     function renderLinescore(sc, totalInnings) {
         const away = sc.away_team || {};

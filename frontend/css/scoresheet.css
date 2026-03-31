@@ -219,6 +219,103 @@ header h1 {
     background: #f5f0e6;
 }
 
+/* Pitcher Box */
+.pitcher-box {
+    margin-top: 16px;
+    border-top: 2px solid #3a3530;
+    padding-top: 10px;
+}
+
+.pitcher-box h3 {
+    font-family: 'Special Elite', 'Courier New', monospace;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+    color: #3a3530;
+}
+
+.pitcher-box table {
+    width: 100%;
+    max-width: 800px;
+    border-collapse: collapse;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+}
+
+.pitcher-box th {
+    background: #3a3530;
+    color: #f5f0e8;
+    padding: 5px 8px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    white-space: nowrap;
+}
+
+.pitcher-box th:first-child {
+    text-align: left;
+    min-width: 170px;
+}
+
+.pitcher-box td {
+    padding: 5px 8px;
+    text-align: center;
+    border-bottom: 1px solid #d5cfc5;
+}
+
+.pitcher-box td:first-child {
+    text-align: left;
+    font-weight: normal;
+}
+
+.pitcher-box tr:last-child td {
+    border-bottom: 2px solid #3a3530;
+}
+
+.pitcher-box .decision {
+    display: inline-block;
+    font-weight: bold;
+    font-size: 11px;
+    margin-left: 6px;
+    padding: 1px 5px;
+    border-radius: 2px;
+    letter-spacing: 0.5px;
+}
+
+.pitcher-box .decision-W {
+    background: #2e6b2e;
+    color: #fff;
+}
+
+.pitcher-box .decision-L {
+    background: #b22222;
+    color: #fff;
+}
+
+.pitcher-box .decision-S {
+    background: #1a5276;
+    color: #fff;
+}
+
+.pitcher-box .decision-H {
+    background: #7d6608;
+    color: #fff;
+}
+
+.pitcher-box .totals-row td {
+    border-top: 2px solid #3a3530;
+    border-bottom: 2px solid #3a3530;
+    font-weight: bold;
+    background: #f6f1e7;
+}
+
+.pitcher-box .pitch-count {
+    font-size: 11px;
+    color: #888;
+}
+
 /* Responsive */
 @media (max-width: 900px) {
     body {

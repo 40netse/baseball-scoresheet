@@ -2,7 +2,7 @@
 
 from models import (
     AtBat, BaseAdvancement, GameScorecard, InningTotals,
-    Pitch, PlayerLine, TeamScorecard, BASE_MAP,
+    Pitch, PitcherLine, PlayerLine, TeamScorecard, BASE_MAP,
 )
 
 # MLB API position abbreviations to position numbers
@@ -508,5 +508,40 @@ def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
     # Current game state
     scorecard.current_inning = linescore.get("currentInning", 0)
     scorecard.is_top_inning = linescore.get("isTopInning", True)
+
+    # Pitching summary box
+    decisions = live_data.get("decisions", {})
+    decision_map = {}
+    for decision_type, label in [("winner", "W"), ("loser", "L"), ("save", "S")]:
+        d = decisions.get(decision_type, {})
+        if d:
+            decision_map[d.get("id")] = label
+
+    for side, team_sc in [("away", scorecard.away_team), ("home", scorecard.home_team)]:
+        team_box = boxscore.get("teams", {}).get(side, {})
+        pitcher_ids = team_box.get("pitchers", [])
+        players_data = team_box.get("players", {})
+
+        for pid in pitcher_ids:
+            p = players_data.get(f"ID{pid}", {})
+            person = p.get("person", {})
+            stats = p.get("stats", {}).get("pitching", {})
+            player_id = person.get("id", 0)
+
+            team_sc.pitchers.append(PitcherLine(
+                name=person.get("fullName", "Unknown"),
+                player_id=player_id,
+                jersey_number=p.get("jerseyNumber", ""),
+                ip=stats.get("inningsPitched", "0"),
+                hits=stats.get("hits", 0),
+                runs=stats.get("runs", 0),
+                earned_runs=stats.get("earnedRuns", 0),
+                walks=stats.get("baseOnBalls", 0),
+                strikeouts=stats.get("strikeOuts", 0),
+                home_runs=stats.get("homeRuns", 0),
+                pitches=stats.get("numberOfPitches", 0),
+                strikes=stats.get("strikes", 0),
+                decision=decision_map.get(player_id, ""),
+            ))
 
     return scorecard
