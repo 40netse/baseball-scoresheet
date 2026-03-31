@@ -454,38 +454,56 @@ const ScoresheetRenderer = {
     // ─── RUNNER ANNOTATIONS ───────────────────────────────────
 
     _drawRunnerAnnotations(g, cx, cy, d, advancements) {
+        const baseCoords = {
+            0: [cx, cy + d],       // home
+            1: [cx + d, cy],       // 1st
+            2: [cx, cy - d],       // 2nd
+            3: [cx - d, cy],       // 3rd
+            4: [cx, cy + d],       // score = home
+        };
+
         for (const adv of advancements) {
-            let label = adv.method || '';
-            if (!label || label === 'BA' || label === 'FO') continue;
-
-            // Midpoint of the relevant base-path segment
-            const baseCoords = {
-                0: [cx, cy + d],       // home
-                1: [cx + d, cy],       // 1st
-                2: [cx, cy - d],       // 2nd
-                3: [cx - d, cy],       // 3rd
-                4: [cx, cy + d],       // score = home
-            };
-
             const from = adv.from_base || 0;
             const to = adv.is_out ? Math.min(from + 1, 4) : (adv.to_base || 0);
             const fromPt = baseCoords[from] || baseCoords[0];
             const toPt = baseCoords[to] || baseCoords[from] || baseCoords[0];
 
+            // Draw the advancement path line along the diamond edge
+            // Use a dashed blue line so it's distinct from the batter's bold black paths
+            if (from !== to || adv.is_out) {
+                const pathLine = this._seg(g, fromPt, toPt, '#2266aa', 2);
+                pathLine.setAttribute('stroke-dasharray', '3,2');
+
+                // If runner was out, draw an X at the destination
+                if (adv.is_out) {
+                    const xSize = 4;
+                    this._seg(g, [toPt[0] - xSize, toPt[1] - xSize],
+                                 [toPt[0] + xSize, toPt[1] + xSize], ACCENT, 2);
+                    this._seg(g, [toPt[0] + xSize, toPt[1] - xSize],
+                                 [toPt[0] - xSize, toPt[1] + xSize], ACCENT, 2);
+                }
+            }
+
+            // Label along the path
+            let label = adv.method || '';
+            if (!label) continue;
+
+            // Midpoint of the segment
             let tx = (fromPt[0] + toPt[0]) / 2;
             let ty = (fromPt[1] + toPt[1]) / 2;
 
-            // Offset away from diamond
+            // Offset away from the diamond so text doesn't overlap the line
             if (tx > cx) tx += 10;
             else if (tx < cx) tx -= 10;
+            else tx += 12; // top/bottom segments — push right
+
             if (ty > cy) ty += 6;
             else if (ty < cy) ty -= 5;
 
-            // Truncate long labels
             if (label.length > 8) label = label.substring(0, 8);
 
             this._txt(g, tx, ty, label, {
-                anchor: 'middle', size: 7, fill: '#666', bold: true,
+                anchor: 'middle', size: 7, fill: '#2266aa', bold: true,
             });
         }
     },
