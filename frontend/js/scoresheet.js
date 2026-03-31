@@ -1,485 +1,594 @@
 /**
- * SVG-based baseball scoresheet renderer.
+ * SVG-based baseball scoresheet renderer — classic paper scorecard style.
  *
- * Renders a traditional baseball scorecard with:
- * - Player names and positions in the left columns
- * - One diamond per at-bat per inning
- * - Pitch sequences, hit notation, base advancement
- * - Totals columns on the right
+ * Matches the traditional layout from the Shelley Youth Baseball cheat sheet:
+ *  - Diamond centered-left in each cell
+ *  - Right sidebar with HR/3B/2B/1B/SAC/HP/BB labels (highlighted on reach)
+ *  - Pitch count boxes in bottom-left corner
+ *  - Hit lines from home plate into the field
+ *  - Bold base-path lines for advancement, filled diamond on scoring
+ *  - Circled out numbers, RBI X marks
+ *  - End-of-inning arrow on the last out
  */
-
-const CELL_WIDTH = 85;
-const CELL_HEIGHT = 85;
-const NAME_COL_WIDTH = 160;
-const POS_COL_WIDTH = 35;
-const HEADER_WIDTH = NAME_COL_WIDTH + POS_COL_WIDTH;
-const DIAMOND_SIZE = 20;
-const TOTALS_COLS = ['AB', 'R', 'H', 'RBI'];
-const TOTALS_COL_WIDTH = 35;
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
+// Layout constants
+const CELL_W = 100;
+const CELL_H = 100;
+const NUM_COL_W = 30;       // batting order # column
+const NAME_COL_W = 145;     // player name column
+const POS_COL_W = 32;       // position column
+const HEADER_W = NUM_COL_W + NAME_COL_W + POS_COL_W;
+const HDR_H = 26;           // header row height
+const DIAMOND_R = 18;       // diamond "radius" (center to vertex)
+const SIDEBAR_W = 22;       // right sidebar inside each cell for reached-base labels
+const TOTALS_COLS = ['AB', 'R', 'H', 'RBI'];
+const TOTALS_COL_W = 34;
+const SUMMARY_ROW_H = 24;   // bottom totals row
+
+// Colors
+const INK = '#1a1a1a';
+const GRID = '#8b8070';
+const GRID_LIGHT = '#c4b9aa';
+const PAPER = '#fcf9f3';
+const PAPER_ALT = '#f6f1e7';
+const ACCENT = '#b22222';    // out numbers, end-of-inning arrow
+const SCORE_FILL = '#2a2520';
+const HIT_REACHED = '#2e6b2e'; // green tint for reached-base sidebar highlight
+const REACH_BG = '#d8ecd8';
+
+// Which sidebar labels map to which result codes
+const SIDEBAR_LABELS = ['HR', '3B', '2B', '1B', 'SAC', 'HP', 'BB'];
+const REACH_MAP = {
+    'HR': 'HR', '3B': '3B', '2B': '2B', '1B': '1B',
+    'SAC': 'SAC', 'SF': 'SAC',
+    'HP': 'HP', 'HBP': 'HP',
+    'BB': 'BB', 'IBB': 'BB',
+};
+
 const ScoresheetRenderer = {
-    /**
-     * Render a team's scorecard into an SVG element.
-     * @param {SVGElement} svgEl - The target SVG element.
-     * @param {Object} teamData - TeamScorecard data from the API.
-     * @param {number} totalInnings - Total innings to render.
-     */
+
     render(svgEl, teamData, totalInnings = 9) {
         svgEl.innerHTML = '';
 
         const players = teamData.players || [];
         const numRows = Math.max(players.length, 9);
-        const numInnings = Math.max(totalInnings, 9);
-        const totalWidth = HEADER_WIDTH + (numInnings * CELL_WIDTH) + (TOTALS_COLS.length * TOTALS_COL_WIDTH) + 2;
-        const headerHeight = 28;
-        const totalHeight = headerHeight + (numRows * CELL_HEIGHT) + 2;
+        const numInn = Math.max(totalInnings, 9);
+        const W = HEADER_W + (numInn * CELL_W) + (TOTALS_COLS.length * TOTALS_COL_W) + 1;
+        const H = HDR_H + (numRows * CELL_H) + SUMMARY_ROW_H + 1;
 
-        svgEl.setAttribute('viewBox', `0 0 ${totalWidth} ${totalHeight}`);
+        svgEl.setAttribute('viewBox', `0 0 ${W} ${H}`);
         svgEl.style.width = '100%';
         svgEl.style.height = 'auto';
 
-        // Background
-        const bg = this._rect(svgEl, 0, 0, totalWidth, totalHeight, '#fff', '#2c2c2c', 1);
+        // Paper background
+        this._rect(svgEl, 0, 0, W, H, PAPER);
+
+        // Render layers bottom-up: grid, then content on top
+        const gridLayer = this._g(svgEl, 'grid');
+        const contentLayer = this._g(svgEl, 'content');
 
         // Header row
-        this._drawHeader(svgEl, numInnings, headerHeight);
+        this._drawHeader(contentLayer, numInn, W);
 
         // Player rows
         players.forEach((player, idx) => {
-            this._drawPlayerRow(svgEl, player, idx, numInnings, headerHeight);
+            this._drawPlayerRow(contentLayer, player, idx, numInn, teamData);
         });
 
-        // Fill empty rows if less than 9 players
-        for (let i = players.length; i < 9; i++) {
-            // just grid lines, drawn by _drawGrid
-        }
+        // Grid lines (on top of backgrounds, below content text — but we draw grid last
+        // so the lines are crisp on top)
+        this._drawGrid(gridLayer, numRows, numInn, W, H);
 
-        // Grid lines
-        this._drawGrid(svgEl, numRows, numInnings, headerHeight);
-
-        // Inning totals row at bottom
-        this._drawInningTotals(svgEl, teamData, numRows, numInnings, headerHeight);
+        // Summary row at bottom
+        this._drawSummaryRow(contentLayer, teamData, numRows, numInn);
     },
 
-    _drawHeader(svg, numInnings, headerHeight) {
-        const g = this._group(svg, 'header');
+    // ─── HEADER ───────────────────────────────────────────────
 
-        // Header background
-        this._rect(g, 0, 0, HEADER_WIDTH + (numInnings * CELL_WIDTH) + (TOTALS_COLS.length * TOTALS_COL_WIDTH) + 2, headerHeight, '#2c2c2c');
+    _drawHeader(layer, numInn, W) {
+        const g = this._g(layer, 'hdr');
+        this._rect(g, 0, 0, W, HDR_H, '#3a3530');
 
-        // "Player" label
-        this._text(g, 8, 19, 'PLAYER', {
-            fontSize: '11px', fontWeight: 'bold', fill: '#f5f0e8'
-        });
+        // Column headers
+        this._txt(g, NUM_COL_W / 2, 17, '#', { anchor: 'middle', size: 10, bold: true, fill: '#c4b9aa' });
+        this._txt(g, NUM_COL_W + 6, 17, 'PLAYER', { size: 10, bold: true, fill: '#f5f0e8' });
+        this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, 17, 'POS',
+            { anchor: 'middle', size: 9, bold: true, fill: '#c4b9aa' });
 
-        // "Pos" label
-        this._text(g, NAME_COL_WIDTH + 5, 19, 'POS', {
-            fontSize: '10px', fontWeight: 'bold', fill: '#f5f0e8'
-        });
-
-        // Inning numbers
-        for (let i = 1; i <= numInnings; i++) {
-            const x = HEADER_WIDTH + ((i - 1) * CELL_WIDTH) + (CELL_WIDTH / 2);
-            this._text(g, x, 19, String(i), {
-                fontWeight: 'bold', fontSize: '13px', textAnchor: 'middle', fill: '#f5f0e8'
-            });
+        for (let i = 1; i <= numInn; i++) {
+            const cx = HEADER_W + ((i - 1) * CELL_W) + CELL_W / 2;
+            this._txt(g, cx, 18, String(i), { anchor: 'middle', size: 13, bold: true, fill: '#f5f0e8' });
         }
 
-        // Totals headers
         TOTALS_COLS.forEach((label, idx) => {
-            const x = HEADER_WIDTH + (numInnings * CELL_WIDTH) + (idx * TOTALS_COL_WIDTH) + (TOTALS_COL_WIDTH / 2);
-            this._text(g, x, 19, label, {
-                fontWeight: 'bold', fontSize: '10px', textAnchor: 'middle', fill: '#f5f0e8'
-            });
+            const cx = HEADER_W + (numInn * CELL_W) + (idx * TOTALS_COL_W) + TOTALS_COL_W / 2;
+            this._txt(g, cx, 17, label, { anchor: 'middle', size: 9, bold: true, fill: '#c4b9aa' });
         });
     },
 
-    _drawPlayerRow(svg, player, rowIndex, numInnings, headerHeight) {
-        const y = headerHeight + (rowIndex * CELL_HEIGHT);
-        const g = this._group(svg, `player-${rowIndex}`);
+    // ─── PLAYER ROW ───────────────────────────────────────────
 
-        // Alternating row background
-        if (rowIndex % 2 === 1) {
-            this._rect(g, 1, y + 1, HEADER_WIDTH - 1, CELL_HEIGHT - 1, '#f9f6f0');
+    _drawPlayerRow(layer, player, rowIdx, numInn, teamData) {
+        const y = HDR_H + rowIdx * CELL_H;
+        const g = this._g(layer, `p${rowIdx}`);
+
+        // Alternating row tint on name columns
+        if (rowIdx % 2 === 1) {
+            this._rect(g, 0, y, HEADER_W, CELL_H, PAPER_ALT);
         }
+
+        // Batting order number
+        this._txt(g, NUM_COL_W / 2, y + CELL_H / 2 + 5, String(player.batting_order || ''),
+            { anchor: 'middle', size: 14, bold: true });
 
         // Player name
         const name = player.name || '';
-        const displayName = name.length > 18 ? name.substring(0, 18) + '.' : name;
-        this._text(g, 8, y + 30, displayName, { fontSize: '11px' });
+        const display = name.length > 16 ? name.substring(0, 16) + '.' : name;
+        this._txt(g, NUM_COL_W + 5, y + 28, display, { size: 11 });
 
         // Jersey number
         if (player.jersey_number) {
-            this._text(g, 8, y + 45, `#${player.jersey_number}`, {
-                fontSize: '9px', fill: '#888'
-            });
+            this._txt(g, NUM_COL_W + 5, y + 42, `#${player.jersey_number}`, { size: 9, fill: '#999' });
         }
 
         // Sub indicator
         if (player.batting_order_seq > 0) {
-            this._text(g, 8, y + 58, '(sub)', {
-                fontSize: '8px', fill: '#999', fontStyle: 'italic'
+            this._txt(g, NUM_COL_W + 5, y + 55, 'SUB', {
+                size: 8, fill: ACCENT, bold: true
             });
         }
 
         // Position
-        this._text(g, NAME_COL_WIDTH + 8, y + 35, player.position || '', {
-            fontSize: '12px', fontWeight: 'bold'
-        });
+        this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + CELL_H / 2 + 5,
+            player.position || '', { anchor: 'middle', size: 13, bold: true });
 
         // At-bat cells
         const atBats = player.at_bats || {};
-        for (let inning = 1; inning <= numInnings; inning++) {
-            const cellX = HEADER_WIDTH + ((inning - 1) * CELL_WIDTH);
-            const atBat = atBats[String(inning)];
-            if (atBat) {
-                this._drawAtBatCell(g, cellX, y, atBat);
+        for (let inn = 1; inn <= numInn; inn++) {
+            const ab = atBats[String(inn)];
+            if (ab) {
+                const cellX = HEADER_W + (inn - 1) * CELL_W;
+                this._drawAtBat(g, cellX, y, ab, teamData);
             }
         }
+
+        // Totals — compute from at_bats
+        this._drawPlayerTotals(g, player, numInn, y);
     },
 
-    _drawAtBatCell(parent, x, y, atBat) {
-        const cx = x + CELL_WIDTH / 2;
-        const cy = y + CELL_HEIGHT / 2 - 8;
-
-        // Diamond
-        const d = DIAMOND_SIZE;
-        const diamondPoints = [
-            [cx, cy - d],       // top (2nd base)
-            [cx + d, cy],       // right (1st base)
-            [cx, cy + d],       // bottom (home)
-            [cx - d, cy],       // left (3rd base)
-        ];
-
-        const diamondPath = `M${diamondPoints[0][0]},${diamondPoints[0][1]} ` +
-            `L${diamondPoints[1][0]},${diamondPoints[1][1]} ` +
-            `L${diamondPoints[2][0]},${diamondPoints[2][1]} ` +
-            `L${diamondPoints[3][0]},${diamondPoints[3][1]} Z`;
-
-        const scored = atBat.bases_reached >= 4;
-
-        const diamond = document.createElementNS(SVG_NS, 'path');
-        diamond.setAttribute('d', diamondPath);
-        diamond.setAttribute('fill', scored ? '#2c2c2c' : 'none');
-        diamond.setAttribute('stroke', '#2c2c2c');
-        diamond.setAttribute('stroke-width', '1.2');
-        parent.appendChild(diamond);
-
-        // Base paths (bold lines on the diamond edges for bases reached)
-        const basesReached = atBat.bases_reached || 0;
-        if (basesReached >= 1) {
-            this._basePath(parent, diamondPoints[2], diamondPoints[1], scored); // home -> 1st
-        }
-        if (basesReached >= 2) {
-            this._basePath(parent, diamondPoints[1], diamondPoints[0], scored); // 1st -> 2nd
-        }
-        if (basesReached >= 3) {
-            this._basePath(parent, diamondPoints[0], diamondPoints[3], scored); // 2nd -> 3rd
-        }
-        if (basesReached >= 4) {
-            this._basePath(parent, diamondPoints[3], diamondPoints[2], scored); // 3rd -> home
+    _drawPlayerTotals(g, player, numInn, y) {
+        const atBats = player.at_bats || {};
+        let ab = 0, r = 0, h = 0, rbi = 0;
+        for (const [, pa] of Object.entries(atBats)) {
+            // AB excludes walks, HBP, sacrifices
+            const res = (pa.result || '').toUpperCase();
+            const isNotAB = ['BB', 'IBB', 'HP', 'HBP', 'SAC', 'SF', 'INT'].some(x =>
+                res === x || res.startsWith('SF ') || res.startsWith('SAC ')
+            );
+            if (!isNotAB) ab++;
+            if (pa.bases_reached >= 4) r++;
+            if (['1B', '2B', '3B', 'HR'].includes(res)) h++;
+            rbi += pa.rbi || 0;
         }
 
-        // Hit type line from home plate toward the field
-        if (atBat.hit_type && atBat.result_type === 'hit') {
-            this._drawHitLine(parent, cx, cy, d, atBat);
-        }
-
-        // Result notation at bottom of cell
-        const notation = atBat.result || '';
-        this._text(parent, cx, y + CELL_HEIGHT - 5, notation, {
-            fontSize: '10px', textAnchor: 'middle', fontWeight: 'bold'
+        const vals = [ab, r, h, rbi];
+        const baseX = HEADER_W + numInn * CELL_W;
+        vals.forEach((v, i) => {
+            this._txt(g, baseX + i * TOTALS_COL_W + TOTALS_COL_W / 2, y + CELL_H / 2 + 5,
+                String(v), { anchor: 'middle', size: 13, bold: true });
         });
+    },
 
-        // Out number (top-right corner, red)
-        if (atBat.is_out && atBat.out_number) {
-            const circle = document.createElementNS(SVG_NS, 'circle');
-            circle.setAttribute('cx', x + CELL_WIDTH - 12);
-            circle.setAttribute('cy', y + 12);
-            circle.setAttribute('r', '8');
-            circle.setAttribute('fill', 'none');
-            circle.setAttribute('stroke', '#c00');
-            circle.setAttribute('stroke-width', '1.5');
-            parent.appendChild(circle);
-            this._text(parent, x + CELL_WIDTH - 12, y + 16, String(atBat.out_number), {
-                fontSize: '11px', textAnchor: 'middle', fontWeight: 'bold', fill: '#c00'
+    // ─── AT-BAT CELL ──────────────────────────────────────────
+
+    _drawAtBat(parent, x, y, ab, teamData) {
+        const g = this._g(parent);
+
+        // Diamond area: offset left to leave room for sidebar
+        const diamondAreaW = CELL_W - SIDEBAR_W;
+        const cx = x + diamondAreaW / 2;
+        const cy = y + CELL_H / 2 - 4;
+        const d = DIAMOND_R;
+
+        // Vertices: top=2B, right=1B, bottom=Home, left=3B
+        const pts = {
+            top:   [cx, cy - d],
+            right: [cx + d, cy],
+            bot:   [cx, cy + d],
+            left:  [cx - d, cy],
+        };
+
+        const scored = (ab.bases_reached || 0) >= 4;
+
+        // Draw diamond
+        const dPath = `M${pts.top[0]},${pts.top[1]}L${pts.right[0]},${pts.right[1]}` +
+            `L${pts.bot[0]},${pts.bot[1]}L${pts.left[0]},${pts.left[1]}Z`;
+        const diamond = this._path(g, dPath, scored ? SCORE_FILL : 'none', INK, 1.2);
+
+        // Bold base-path lines for bases reached
+        const basesReached = ab.bases_reached || 0;
+        const pathColor = scored ? '#f5f0e8' : INK;
+        if (basesReached >= 1) this._seg(g, pts.bot, pts.right, pathColor, 3);
+        if (basesReached >= 2) this._seg(g, pts.right, pts.top, pathColor, 3);
+        if (basesReached >= 3) this._seg(g, pts.top, pts.left, pathColor, 3);
+        if (basesReached >= 4) this._seg(g, pts.left, pts.bot, pathColor, 3);
+
+        // Hit line from home plate into the field
+        if (ab.hit_type && ab.result_type === 'hit') {
+            this._drawHitLine(g, cx, cy, d, ab);
+        }
+
+        // ── Right sidebar: HR / 3B / 2B / 1B / SAC / HP / BB ──
+        this._drawSidebar(g, x, y, ab);
+
+        // ── Pitch count boxes (bottom-left of cell) ──
+        this._drawPitchBoxes(g, x, y, ab.pitches || []);
+
+        // ── Result notation (center-bottom, below diamond) ──
+        const notation = ab.result || '';
+        // For outs with fielders, show notation; for reaches, sidebar handles it
+        if (ab.is_out || ab.result_type === 'out') {
+            this._txt(g, cx, y + CELL_H - 12, notation, {
+                anchor: 'middle', size: 10, bold: true
+            });
+        } else if (!REACH_MAP[notation]) {
+            // Show non-standard reach notations (FC, E-3, etc.)
+            this._txt(g, cx, y + CELL_H - 12, notation, {
+                anchor: 'middle', size: 10, bold: true
             });
         }
 
-        // Pitch sequence
-        this._drawPitchSequence(parent, x + 5, y + CELL_HEIGHT - 18, atBat.pitches || []);
+        // ── Out number (circled, top-right of diamond area) ──
+        if (ab.is_out && ab.out_number) {
+            const ox = x + diamondAreaW - 8;
+            const oy = y + 12;
+            this._circle(g, ox, oy, 8, 'none', ACCENT, 1.8);
+            this._txt(g, ox, oy + 4, String(ab.out_number), {
+                anchor: 'middle', size: 12, bold: true, fill: ACCENT
+            });
 
-        // RBI indicators (X marks in bottom-left)
-        if (atBat.rbi > 0) {
-            for (let r = 0; r < atBat.rbi; r++) {
-                this._text(parent, x + 4 + (r * 8), y + 12, '\u00d7', {
-                    fontSize: '10px', fontWeight: 'bold', fill: '#006600'
+            // End-of-inning arrow: solid line under the cell for 3rd out
+            if (ab.out_number === 3) {
+                const arrowY = y + CELL_H - 2;
+                this._seg(g, [x + 4, arrowY], [x + diamondAreaW - 4, arrowY], ACCENT, 2.5);
+                // Arrowhead
+                const ax = x + diamondAreaW - 4;
+                this._path(g,
+                    `M${ax},${arrowY}L${ax - 6},${arrowY - 4}L${ax - 6},${arrowY + 4}Z`,
+                    ACCENT, ACCENT, 0);
+            }
+        }
+
+        // ── RBI marks (X's in bottom-left, above pitch boxes) ──
+        if (ab.rbi > 0) {
+            for (let r = 0; r < Math.min(ab.rbi, 4); r++) {
+                this._txt(g, x + 4 + r * 10, y + 14, '\u2716', {
+                    size: 9, bold: true, fill: HIT_REACHED
                 });
             }
         }
 
-        // Runner advancement annotations along base paths
-        this._drawRunnerAnnotations(parent, cx, cy, d, atBat.runner_advancements || []);
+        // ── Runner advancement annotations ──
+        this._drawRunnerAnnotations(g, cx, cy, d, ab.runner_advancements || []);
     },
 
-    _basePath(parent, from, to, scored) {
-        const line = document.createElementNS(SVG_NS, 'line');
-        line.setAttribute('x1', from[0]);
-        line.setAttribute('y1', from[1]);
-        line.setAttribute('x2', to[0]);
-        line.setAttribute('y2', to[1]);
-        line.setAttribute('stroke', scored ? '#f5f0e8' : '#2c2c2c');
-        line.setAttribute('stroke-width', '3');
-        parent.appendChild(line);
+    // ─── SIDEBAR (HR/3B/2B/1B/SAC/HP/BB) ─────────────────────
+
+    _drawSidebar(g, cellX, cellY, ab) {
+        const sx = cellX + CELL_W - SIDEBAR_W;
+        const labelH = CELL_H / SIDEBAR_LABELS.length;
+        const result = (ab.result || '').toUpperCase();
+        const matched = REACH_MAP[result] || null;
+
+        // Sidebar separator line
+        this._seg(g, [sx, cellY + 1], [sx, cellY + CELL_H - 1], GRID_LIGHT, 0.5);
+
+        SIDEBAR_LABELS.forEach((label, i) => {
+            const ly = cellY + i * labelH;
+            const isActive = matched === label;
+
+            if (isActive) {
+                // Highlight background
+                this._rect(g, sx + 1, ly + 1, SIDEBAR_W - 2, labelH - 1, REACH_BG);
+            }
+
+            this._txt(g, sx + SIDEBAR_W / 2, ly + labelH / 2 + 3, label, {
+                anchor: 'middle',
+                size: 7,
+                bold: isActive,
+                fill: isActive ? HIT_REACHED : '#bbb',
+            });
+
+            // Subtle separator between sidebar labels
+            if (i > 0) {
+                this._seg(g, [sx + 2, ly], [sx + SIDEBAR_W - 2, ly], '#e0d8cc', 0.3);
+            }
+        });
     },
 
-    _drawHitLine(parent, cx, cy, d, atBat) {
-        // Draw a line from home plate into the field to indicate hit direction
+    // ─── PITCH COUNT BOXES ────────────────────────────────────
+
+    _drawPitchBoxes(g, cellX, cellY, pitches) {
+        const boxSize = 8;
+        const gap = 1;
+        const maxPerRow = 7;
+        const startX = cellX + 3;
+        const startY = cellY + CELL_H - 22;
+
+        pitches.forEach((p, i) => {
+            if (i >= 14) return; // max 2 rows of 7
+            const row = Math.floor(i / maxPerRow);
+            const col = i % maxPerRow;
+            const bx = startX + col * (boxSize + gap);
+            const by = startY + row * (boxSize + gap + 1);
+
+            let fill, stroke, txtFill;
+            if (p.result === 'B') {
+                // Ball: open box
+                fill = 'none';
+                stroke = '#999';
+                txtFill = '#999';
+            } else if (p.result === 'F') {
+                // Foul: light fill
+                fill = '#e0ddd5';
+                stroke = '#999';
+                txtFill = '#666';
+            } else if (p.result === 'C') {
+                // Called strike: filled with different indicator
+                fill = INK;
+                stroke = INK;
+                txtFill = PAPER;
+            } else if (p.result === 'X') {
+                // In play: filled
+                fill = '#5a5a5a';
+                stroke = '#5a5a5a';
+                txtFill = PAPER;
+            } else {
+                // Swinging strike: filled
+                fill = INK;
+                stroke = INK;
+                txtFill = PAPER;
+            }
+
+            this._rect(g, bx, by, boxSize, boxSize, fill, stroke, 0.6);
+            this._txt(g, bx + boxSize / 2, by + boxSize - 1.5, String(i + 1), {
+                anchor: 'middle', size: 6, fill: txtFill,
+            });
+        });
+    },
+
+    // ─── HIT LINE ─────────────────────────────────────────────
+
+    _drawHitLine(g, cx, cy, d, ab) {
         const homeX = cx;
         const homeY = cy + d;
+        const hitLen = d * 1.5;
 
-        let endX, endY;
-        const hitLen = d * 1.3;
+        const fielders = ab.fielders || [];
+        const firstFielder = fielders.length > 0 ? fielders[0] : 8;
 
-        // Default: straight up (center)
-        endX = cx;
-        endY = cy - d - 5;
+        // Angle by fielder position (degrees, 0=right, -90=up)
+        const angles = {
+            1: -90, 2: -90, 3: -50, 4: -65,
+            5: -115, 6: -105, 7: -135, 8: -90, 9: -45,
+        };
+        const angleDeg = angles[firstFielder] || -90;
+        const angleRad = angleDeg * Math.PI / 180;
 
-        // Use fielder positions to approximate direction
-        const fielders = atBat.fielders || [];
-        if (fielders.length > 0) {
-            const firstFielder = fielders[0];
-            // Approximate field positions
-            const angles = {
-                1: -90,  // pitcher (up middle)
-                2: -90,  // catcher (shouldn't happen for hits)
-                3: -45,  // 1B (right side)
-                4: -60,  // 2B (right-center)
-                5: -120, // 3B (left side)
-                6: -110, // SS (left-center)
-                7: -140, // LF
-                8: -90,  // CF
-                9: -40,  // RF
-            };
-            const angle = (angles[firstFielder] || -90) * Math.PI / 180;
-            endX = homeX + Math.cos(angle) * hitLen;
-            endY = homeY + Math.sin(angle) * hitLen;
+        const endX = homeX + Math.cos(angleRad) * hitLen;
+        const endY = homeY + Math.sin(angleRad) * hitLen;
+
+        const line = this._seg(g, [homeX, homeY], [endX, endY], INK, 1.5);
+
+        // Ground ball = dashed, fly ball = no change, line drive = solid (default)
+        if (ab.hit_type === 'G') {
+            line.setAttribute('stroke-dasharray', '4,3');
         }
 
-        const line = document.createElementNS(SVG_NS, 'line');
-        line.setAttribute('x1', homeX);
-        line.setAttribute('y1', homeY);
-        line.setAttribute('x2', endX);
-        line.setAttribute('y2', endY);
-
-        // Solid line = line drive, dashed = ground ball
-        if (atBat.hit_type === 'G') {
-            line.setAttribute('stroke-dasharray', '3,2');
-        }
-        line.setAttribute('stroke', '#2c2c2c');
-        line.setAttribute('stroke-width', '1.5');
-        parent.appendChild(line);
-    },
-
-    _drawPitchSequence(parent, startX, startY, pitches) {
-        const maxDots = Math.min(pitches.length, 10);
-        for (let i = 0; i < maxDots; i++) {
-            const pitch = pitches[i];
-            const px = startX + (i * 7);
-            const circle = document.createElementNS(SVG_NS, 'circle');
-            circle.setAttribute('cx', px);
-            circle.setAttribute('cy', startY);
-            circle.setAttribute('r', '2.5');
-
-            if (pitch.result === 'B') {
-                // Ball: open circle
-                circle.setAttribute('fill', 'none');
-                circle.setAttribute('stroke', '#2c2c2c');
-                circle.setAttribute('stroke-width', '1');
-            } else if (pitch.result === 'F') {
-                // Foul: half-filled
-                circle.setAttribute('fill', '#999');
-                circle.setAttribute('stroke', '#2c2c2c');
-                circle.setAttribute('stroke-width', '0.5');
-            } else if (pitch.result === 'C') {
-                // Called strike: filled with line through
-                circle.setAttribute('fill', '#2c2c2c');
-                // Add a small horizontal line through it
-                const line = document.createElementNS(SVG_NS, 'line');
-                line.setAttribute('x1', px - 4);
-                line.setAttribute('y1', startY);
-                line.setAttribute('x2', px + 4);
-                line.setAttribute('y2', startY);
-                line.setAttribute('stroke', '#2c2c2c');
-                line.setAttribute('stroke-width', '1');
-                parent.appendChild(line);
-            } else {
-                // Strike swinging or in play: filled circle
-                circle.setAttribute('fill', '#2c2c2c');
-            }
-            parent.appendChild(circle);
+        // For fly balls and popups, add a small arc
+        if (ab.hit_type === 'F' || ab.hit_type === 'P') {
+            // Small curve above the line
+            const midX = (homeX + endX) / 2;
+            const midY = (homeY + endY) / 2 - 6;
+            const arc = document.createElementNS(SVG_NS, 'path');
+            arc.setAttribute('d', `M${homeX},${homeY}Q${midX},${midY},${endX},${endY}`);
+            arc.setAttribute('fill', 'none');
+            arc.setAttribute('stroke', INK);
+            arc.setAttribute('stroke-width', '1.2');
+            g.appendChild(arc);
+            line.setAttribute('stroke', 'none'); // hide straight line, use curve
         }
     },
 
-    _drawRunnerAnnotations(parent, cx, cy, d, advancements) {
-        // Draw small text annotations along base paths for runner movements
+    // ─── RUNNER ANNOTATIONS ───────────────────────────────────
+
+    _drawRunnerAnnotations(g, cx, cy, d, advancements) {
         for (const adv of advancements) {
-            if (!adv.method) continue;
+            let label = adv.method || '';
+            if (!label || label === 'BA' || label === 'FO') continue;
 
-            // Position the annotation along the relevant base path
-            let textX, textY;
-            const from = adv.from_base;
-            const to = adv.to_base || (adv.is_out ? from : 0);
-
-            // Midpoint of the base path segment
+            // Midpoint of the relevant base-path segment
             const baseCoords = {
                 0: [cx, cy + d],       // home
                 1: [cx + d, cy],       // 1st
                 2: [cx, cy - d],       // 2nd
                 3: [cx - d, cy],       // 3rd
-                4: [cx, cy + d],       // score (home)
+                4: [cx, cy + d],       // score = home
             };
 
+            const from = adv.from_base || 0;
+            const to = adv.is_out ? Math.min(from + 1, 4) : (adv.to_base || 0);
             const fromPt = baseCoords[from] || baseCoords[0];
-            const actualTo = adv.is_out ? from + 1 : to;
-            const toPt = baseCoords[actualTo] || baseCoords[to] || fromPt;
+            const toPt = baseCoords[to] || baseCoords[from] || baseCoords[0];
 
-            textX = (fromPt[0] + toPt[0]) / 2;
-            textY = (fromPt[1] + toPt[1]) / 2;
+            let tx = (fromPt[0] + toPt[0]) / 2;
+            let ty = (fromPt[1] + toPt[1]) / 2;
 
-            // Offset text slightly away from the diamond
-            const offsetX = textX > cx ? 8 : textX < cx ? -8 : 0;
-            const offsetY = textY > cy ? 6 : textY < cy ? -4 : 0;
+            // Offset away from diamond
+            if (tx > cx) tx += 10;
+            else if (tx < cx) tx -= 10;
+            if (ty > cy) ty += 6;
+            else if (ty < cy) ty -= 5;
 
-            // Abbreviated method
-            let label = adv.method;
-            if (label.startsWith('BA')) label = ''; // Don't clutter with batter-advanced
+            // Truncate long labels
+            if (label.length > 8) label = label.substring(0, 8);
 
-            if (label) {
-                this._text(parent, textX + offsetX, textY + offsetY, label, {
-                    fontSize: '7px', textAnchor: 'middle', fill: '#666'
-                });
-            }
+            this._txt(g, tx, ty, label, {
+                anchor: 'middle', size: 7, fill: '#666', bold: true,
+            });
         }
     },
 
-    _drawGrid(svg, numRows, numInnings, headerHeight) {
-        const g = this._group(svg, 'grid');
-        const totalWidth = HEADER_WIDTH + (numInnings * CELL_WIDTH) + (TOTALS_COLS.length * TOTALS_COL_WIDTH);
-        const totalHeight = headerHeight + (numRows * CELL_HEIGHT);
+    // ─── GRID ─────────────────────────────────────────────────
 
-        // Horizontal lines
+    _drawGrid(gridLayer, numRows, numInn, W, H) {
+        const g = this._g(gridLayer, 'lines');
+        const gridBottom = HDR_H + numRows * CELL_H;
+        const rightEdge = HEADER_W + numInn * CELL_W + TOTALS_COLS.length * TOTALS_COL_W;
+
+        // Outer border
+        this._rect(g, 0, 0, rightEdge, gridBottom + SUMMARY_ROW_H, 'none', '#3a3530', 2);
+
+        // Horizontal row lines
         for (let i = 0; i <= numRows; i++) {
-            const y = headerHeight + (i * CELL_HEIGHT);
-            this._line(g, 0, y, totalWidth, y);
+            const y = HDR_H + i * CELL_H;
+            this._seg(g, [0, y], [rightEdge, y], GRID, 0.8);
         }
 
-        // Vertical: left edge
-        this._line(g, 0, 0, 0, totalHeight);
+        // Summary row top line
+        this._seg(g, [0, gridBottom], [rightEdge, gridBottom], '#3a3530', 1.5);
 
-        // Name/pos separator
-        this._line(g, NAME_COL_WIDTH, 0, NAME_COL_WIDTH, totalHeight, '#ccc');
+        // Vertical: batting order | name | pos | innings... | totals...
+        this._seg(g, [NUM_COL_W, HDR_H], [NUM_COL_W, gridBottom + SUMMARY_ROW_H], GRID_LIGHT, 0.6);
+        this._seg(g, [NUM_COL_W + NAME_COL_W, HDR_H], [NUM_COL_W + NAME_COL_W, gridBottom + SUMMARY_ROW_H], GRID_LIGHT, 0.6);
+        this._seg(g, [HEADER_W, 0], [HEADER_W, gridBottom + SUMMARY_ROW_H], '#3a3530', 1.5);
 
-        // Header/inning separator
-        this._line(g, HEADER_WIDTH, 0, HEADER_WIDTH, totalHeight);
-
-        // Inning separators
-        for (let i = 1; i <= numInnings; i++) {
-            const x = HEADER_WIDTH + (i * CELL_WIDTH);
-            this._line(g, x, 0, x, totalHeight);
+        // Inning column lines
+        for (let i = 1; i <= numInn; i++) {
+            const lx = HEADER_W + i * CELL_W;
+            this._seg(g, [lx, HDR_H], [lx, gridBottom + SUMMARY_ROW_H], GRID, 0.8);
         }
 
-        // Totals separators
-        for (let i = 0; i <= TOTALS_COLS.length; i++) {
-            const x = HEADER_WIDTH + (numInnings * CELL_WIDTH) + (i * TOTALS_COL_WIDTH);
-            this._line(g, x, 0, x, totalHeight);
+        // Totals separator (heavier line before totals)
+        const totalsX = HEADER_W + numInn * CELL_W;
+        this._seg(g, [totalsX, 0], [totalsX, gridBottom + SUMMARY_ROW_H], '#3a3530', 1.5);
+
+        for (let i = 1; i < TOTALS_COLS.length; i++) {
+            const lx = totalsX + i * TOTALS_COL_W;
+            this._seg(g, [lx, HDR_H], [lx, gridBottom + SUMMARY_ROW_H], GRID_LIGHT, 0.6);
         }
     },
 
-    _drawInningTotals(svg, teamData, numRows, numInnings, headerHeight) {
-        // Draw R/H/E row below the last player row
-        const y = headerHeight + (numRows * CELL_HEIGHT);
-        const g = this._group(svg, 'inning-totals');
+    // ─── SUMMARY ROW ──────────────────────────────────────────
 
-        // Background
-        this._rect(g, 0, y, HEADER_WIDTH + (numInnings * CELL_WIDTH) + (TOTALS_COLS.length * TOTALS_COL_WIDTH), 22, '#eee');
+    _drawSummaryRow(layer, teamData, numRows, numInn) {
+        const y = HDR_H + numRows * CELL_H;
+        const g = this._g(layer, 'summary');
 
-        this._text(g, 8, y + 16, 'RUNS', { fontSize: '10px', fontWeight: 'bold' });
+        this._rect(g, 0, y, HEADER_W + numInn * CELL_W + TOTALS_COLS.length * TOTALS_COL_W,
+            SUMMARY_ROW_H, PAPER_ALT);
 
+        this._txt(g, NUM_COL_W + 6, y + 17, 'RUNS', { size: 10, bold: true, fill: '#666' });
+
+        // Per-inning run totals
         const inningTotals = teamData.inning_totals || [];
-        for (const it of inningTotals) {
-            if (it.inning <= numInnings) {
-                const cx = HEADER_WIDTH + ((it.inning - 1) * CELL_WIDTH) + (CELL_WIDTH / 2);
-                this._text(g, cx, y + 16, String(it.runs), {
-                    fontSize: '12px', textAnchor: 'middle', fontWeight: 'bold'
-                });
-            }
+        const innMap = {};
+        inningTotals.forEach(it => { innMap[it.inning] = it; });
+
+        for (let i = 1; i <= numInn; i++) {
+            const it = innMap[i];
+            const cx = HEADER_W + (i - 1) * CELL_W + CELL_W / 2;
+            const val = it ? String(it.runs) : '';
+            this._txt(g, cx, y + 17, val, { anchor: 'middle', size: 13, bold: true });
         }
 
-        // Totals
-        const totalsX = HEADER_WIDTH + (numInnings * CELL_WIDTH);
-        // R
-        this._text(g, totalsX + TOTALS_COL_WIDTH / 2, y + 16,
-            String(teamData.total_runs || 0), {
-                fontSize: '12px', textAnchor: 'middle', fontWeight: 'bold'
-            });
-        // H
-        this._text(g, totalsX + TOTALS_COL_WIDTH * 1.5, y + 16,
-            String(teamData.total_hits || 0), {
-                fontSize: '12px', textAnchor: 'middle', fontWeight: 'bold'
-            });
+        // Grand totals
+        const totalsX = HEADER_W + numInn * CELL_W;
+        const totals = [
+            '', // AB — sum displayed per-player only
+            String(teamData.total_runs || 0),
+            String(teamData.total_hits || 0),
+            '', // RBI — sum per-player only
+        ];
+        totals.forEach((v, i) => {
+            if (v) {
+                this._txt(g, totalsX + i * TOTALS_COL_W + TOTALS_COL_W / 2, y + 17,
+                    v, { anchor: 'middle', size: 13, bold: true });
+            }
+        });
     },
 
-    // SVG helpers
+    // ─── SVG PRIMITIVES ───────────────────────────────────────
 
-    _group(parent, id) {
+    _g(parent, id) {
         const g = document.createElementNS(SVG_NS, 'g');
         if (id) g.setAttribute('id', id);
         parent.appendChild(g);
         return g;
     },
 
-    _text(parent, x, y, text, opts = {}) {
+    _txt(parent, x, y, text, opts = {}) {
         const el = document.createElementNS(SVG_NS, 'text');
         el.setAttribute('x', x);
         el.setAttribute('y', y);
         el.textContent = text;
         el.style.fontFamily = "'Courier New', monospace";
-        if (opts.fontSize) el.style.fontSize = opts.fontSize;
-        if (opts.fontWeight) el.style.fontWeight = opts.fontWeight;
-        if (opts.fontStyle) el.style.fontStyle = opts.fontStyle;
-        if (opts.fill) el.style.fill = opts.fill;
-        if (opts.textAnchor) el.setAttribute('text-anchor', opts.textAnchor);
+        el.style.fontSize = (opts.size || 11) + 'px';
+        if (opts.bold) el.style.fontWeight = 'bold';
+        if (opts.fill) el.style.fill = opts.fill; else el.style.fill = INK;
+        if (opts.anchor) el.setAttribute('text-anchor', opts.anchor);
         parent.appendChild(el);
         return el;
     },
 
-    _line(parent, x1, y1, x2, y2, color = '#2c2c2c', width = 1) {
-        const line = document.createElementNS(SVG_NS, 'line');
-        line.setAttribute('x1', x1);
-        line.setAttribute('y1', y1);
-        line.setAttribute('x2', x2);
-        line.setAttribute('y2', y2);
-        line.setAttribute('stroke', color);
-        line.setAttribute('stroke-width', width);
-        parent.appendChild(line);
-        return line;
+    _seg(parent, from, to, color = INK, width = 1) {
+        const l = document.createElementNS(SVG_NS, 'line');
+        l.setAttribute('x1', from[0]);
+        l.setAttribute('y1', from[1]);
+        l.setAttribute('x2', to[0]);
+        l.setAttribute('y2', to[1]);
+        l.setAttribute('stroke', color);
+        l.setAttribute('stroke-width', width);
+        parent.appendChild(l);
+        return l;
     },
 
-    _rect(parent, x, y, w, h, fill = 'none', stroke = 'none', strokeWidth = 0) {
-        const rect = document.createElementNS(SVG_NS, 'rect');
-        rect.setAttribute('x', x);
-        rect.setAttribute('y', y);
-        rect.setAttribute('width', w);
-        rect.setAttribute('height', h);
-        rect.setAttribute('fill', fill);
+    _rect(parent, x, y, w, h, fill = 'none', stroke = 'none', sw = 0) {
+        const r = document.createElementNS(SVG_NS, 'rect');
+        r.setAttribute('x', x);
+        r.setAttribute('y', y);
+        r.setAttribute('width', w);
+        r.setAttribute('height', h);
+        r.setAttribute('fill', fill);
         if (stroke !== 'none') {
-            rect.setAttribute('stroke', stroke);
-            rect.setAttribute('stroke-width', strokeWidth);
+            r.setAttribute('stroke', stroke);
+            r.setAttribute('stroke-width', sw);
         }
-        parent.appendChild(rect);
-        return rect;
+        parent.appendChild(r);
+        return r;
+    },
+
+    _circle(parent, cx, cy, r, fill = 'none', stroke = INK, sw = 1) {
+        const c = document.createElementNS(SVG_NS, 'circle');
+        c.setAttribute('cx', cx);
+        c.setAttribute('cy', cy);
+        c.setAttribute('r', r);
+        c.setAttribute('fill', fill);
+        c.setAttribute('stroke', stroke);
+        c.setAttribute('stroke-width', sw);
+        parent.appendChild(c);
+        return c;
+    },
+
+    _path(parent, d, fill = 'none', stroke = INK, sw = 1) {
+        const p = document.createElementNS(SVG_NS, 'path');
+        p.setAttribute('d', d);
+        p.setAttribute('fill', fill);
+        p.setAttribute('stroke', stroke);
+        p.setAttribute('stroke-width', sw);
+        parent.appendChild(p);
+        return p;
     },
 };

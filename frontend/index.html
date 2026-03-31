@@ -21,44 +21,39 @@
     </header>
 
     <main>
-        <div id="game-info">
+        <div id="game-info" style="display:none;">
             <span id="away-team"></span>
-            <span class="vs">vs</span>
+            <span class="vs">at</span>
             <span id="home-team"></span>
             <span id="game-status"></span>
             <span id="venue"></span>
         </div>
 
+        <!-- Line score (top, like a TV broadcast) -->
+        <div id="linescore-container" style="display:none;">
+            <table id="linescore">
+                <thead>
+                    <tr></tr>
+                </thead>
+                <tbody>
+                    <tr id="away-linescore"></tr>
+                    <tr id="home-linescore"></tr>
+                </tbody>
+            </table>
+        </div>
+
         <div id="scoresheet-container">
             <!-- Away team scoresheet -->
-            <div class="team-sheet" id="away-sheet">
+            <div class="team-sheet" id="away-sheet" style="display:none;">
                 <h2 id="away-team-name">Away</h2>
                 <svg id="away-scorecard" class="scorecard-svg"></svg>
             </div>
 
             <!-- Home team scoresheet -->
-            <div class="team-sheet" id="home-sheet">
+            <div class="team-sheet" id="home-sheet" style="display:none;">
                 <h2 id="home-team-name">Home</h2>
                 <svg id="home-scorecard" class="scorecard-svg"></svg>
             </div>
-        </div>
-
-        <!-- Line score -->
-        <div id="linescore-container">
-            <table id="linescore">
-                <thead>
-                    <tr>
-                        <th>Team</th>
-                        <th>1</th><th>2</th><th>3</th><th>4</th><th>5</th>
-                        <th>6</th><th>7</th><th>8</th><th>9</th>
-                        <th>R</th><th>H</th><th>E</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr id="away-linescore"><td></td></tr>
-                    <tr id="home-linescore"><td></td></tr>
-                </tbody>
-            </table>
         </div>
     </main>
 
