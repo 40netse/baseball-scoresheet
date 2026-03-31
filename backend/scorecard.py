@@ -215,13 +215,13 @@ def translate_play_to_notation(play_data: dict) -> tuple[str, str, str, list[int
 
     # Force out / fielder's choice
     if event_type == "force_out":
-        notation = f"FC {fielder_str}" if fielder_str else "FC"
+        notation = f"FC-{fielder_str}" if fielder_str else "FC"
         return notation, "reach", hit_type, fielders
     if event_type == "fielders_choice":
-        notation = f"FC {fielder_str}" if fielder_str else "FC"
+        notation = f"FC-{fielder_str}" if fielder_str else "FC"
         return notation, "reach", hit_type, fielders
     if event_type == "fielders_choice_out":
-        notation = f"FC {fielder_str}" if fielder_str else "FC"
+        notation = f"FC-{fielder_str}" if fielder_str else "FC"
         return notation, "out", hit_type, fielders
 
     # Errors
