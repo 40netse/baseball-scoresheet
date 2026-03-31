@@ -491,7 +491,11 @@ def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
                     runner_id = r_id
                     break
             if runner_id and runner_id in player_last_at_bat:
-                player_last_at_bat[runner_id].runner_advancements.append(adv)
+                runner_ab = player_last_at_bat[runner_id]
+                runner_ab.runner_advancements.append(adv)
+                # Update bases_reached so bold lines are drawn on the runner's cell
+                if not adv.is_out and adv.to_base > runner_ab.bases_reached:
+                    runner_ab.bases_reached = adv.to_base
             else:
                 at_bat.runner_advancements.append(adv)
 
