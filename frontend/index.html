@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baseball Scoresheet</title>
+    <link rel="stylesheet" href="css/scoresheet.css">
+</head>
+<body>
+    <header>
+        <h1>Baseball Scoresheet</h1>
+        <div id="game-selector">
+            <label for="game-date">Date:</label>
+            <input type="date" id="game-date">
+            <button id="load-games">Load Games</button>
+            <select id="game-list">
+                <option value="">-- Select a game --</option>
+            </select>
+            <button id="load-scorecard" disabled>Load Scorecard</button>
+        </div>
+    </header>
+
+    <main>
+        <div id="game-info">
+            <span id="away-team"></span>
+            <span class="vs">vs</span>
+            <span id="home-team"></span>
+            <span id="game-status"></span>
+            <span id="venue"></span>
+        </div>
+
+        <div id="scoresheet-container">
+            <!-- Away team scoresheet -->
+            <div class="team-sheet" id="away-sheet">
+                <h2 id="away-team-name">Away</h2>
+                <svg id="away-scorecard" class="scorecard-svg"></svg>
+            </div>
+
+            <!-- Home team scoresheet -->
+            <div class="team-sheet" id="home-sheet">
+                <h2 id="home-team-name">Home</h2>
+                <svg id="home-scorecard" class="scorecard-svg"></svg>
+            </div>
+        </div>
+
+        <!-- Line score -->
+        <div id="linescore-container">
+            <table id="linescore">
+                <thead>
+                    <tr>
+                        <th>Team</th>
+                        <th>1</th><th>2</th><th>3</th><th>4</th><th>5</th>
+                        <th>6</th><th>7</th><th>8</th><th>9</th>
+                        <th>R</th><th>H</th><th>E</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr id="away-linescore"><td></td></tr>
+                    <tr id="home-linescore"><td></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <script src="js/api.js"></script>
+    <script src="js/scoresheet.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

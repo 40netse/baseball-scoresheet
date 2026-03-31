@@ -1,0 +1,221 @@
+/* Baseball Scoresheet Styles */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Courier New', monospace;
+    background-color: #f5f0e8;
+    color: #2c2c2c;
+    padding: 20px;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+header h1 {
+    font-size: 28px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 15px;
+}
+
+/* Game selector */
+#game-selector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+#game-selector input,
+#game-selector select,
+#game-selector button {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    padding: 6px 12px;
+    border: 1px solid #8b7d6b;
+    background: #fff;
+}
+
+#game-selector button {
+    cursor: pointer;
+    background: #2c2c2c;
+    color: #f5f0e8;
+    border: none;
+}
+
+#game-selector button:hover {
+    background: #4a4a4a;
+}
+
+#game-selector button:disabled {
+    background: #999;
+    cursor: not-allowed;
+}
+
+/* Game info bar */
+#game-info {
+    text-align: center;
+    font-size: 18px;
+    margin-bottom: 20px;
+    padding: 10px;
+    background: #2c2c2c;
+    color: #f5f0e8;
+    letter-spacing: 1px;
+}
+
+#game-info .vs {
+    margin: 0 15px;
+    font-style: italic;
+    opacity: 0.7;
+}
+
+#game-info #game-status {
+    margin-left: 20px;
+    font-size: 14px;
+    opacity: 0.8;
+}
+
+#game-info #venue {
+    display: block;
+    font-size: 12px;
+    opacity: 0.6;
+    margin-top: 4px;
+}
+
+/* Scoresheet container */
+#scoresheet-container {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.team-sheet {
+    background: #fff;
+    border: 2px solid #2c2c2c;
+    padding: 15px;
+    overflow-x: auto;
+}
+
+.team-sheet h2 {
+    font-size: 18px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 10px;
+    border-bottom: 2px solid #2c2c2c;
+    padding-bottom: 5px;
+}
+
+/* SVG scorecard */
+.scorecard-svg {
+    width: 100%;
+    min-height: 400px;
+}
+
+/* SVG internal styles (applied via JS) */
+.scorecard-svg text {
+    font-family: 'Courier New', monospace;
+}
+
+/* Line score table */
+#linescore-container {
+    max-width: 800px;
+    margin: 30px auto;
+}
+
+#linescore {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 16px;
+}
+
+#linescore th,
+#linescore td {
+    border: 1px solid #2c2c2c;
+    padding: 8px 12px;
+    text-align: center;
+    min-width: 35px;
+}
+
+#linescore th {
+    background: #2c2c2c;
+    color: #f5f0e8;
+    font-weight: bold;
+}
+
+#linescore td:first-child {
+    text-align: left;
+    font-weight: bold;
+    min-width: 120px;
+}
+
+/* Diamond in each at-bat cell */
+.diamond {
+    stroke: #2c2c2c;
+    stroke-width: 1;
+    fill: none;
+}
+
+.diamond.scored {
+    fill: #2c2c2c;
+}
+
+.base-path {
+    stroke: #2c2c2c;
+    stroke-width: 2;
+    fill: none;
+}
+
+.base-path.dashed {
+    stroke-dasharray: 4,3;
+}
+
+.hit-line {
+    stroke: #2c2c2c;
+    stroke-width: 1.5;
+}
+
+.pitch-dot {
+    r: 3;
+}
+
+.pitch-dot.ball {
+    fill: none;
+    stroke: #2c2c2c;
+    stroke-width: 1;
+}
+
+.pitch-dot.strike {
+    fill: #2c2c2c;
+}
+
+.pitch-dot.foul {
+    fill: none;
+    stroke: #2c2c2c;
+    stroke-width: 1;
+    stroke-dasharray: 2,1;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    body {
+        padding: 10px;
+    }
+
+    header h1 {
+        font-size: 20px;
+    }
+
+    #game-selector {
+        flex-direction: column;
+    }
+}
