@@ -70,9 +70,9 @@ async def websocket_game(websocket: WebSocket, game_pk: int):
 
         while True:
             if is_live:
-                # Poll every 30 seconds for live games
+                # Poll every 15 seconds for live games
                 try:
-                    data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                    data = await asyncio.wait_for(websocket.receive_text(), timeout=15.0)
                 except asyncio.TimeoutError:
                     data = "refresh"
             else:

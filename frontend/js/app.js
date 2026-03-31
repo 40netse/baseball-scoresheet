@@ -23,6 +23,7 @@
     const linescoreBody = document.querySelector('#linescore tbody');
 
     let currentWs = null;
+    let previousScorecard = null;  // track previous state for change detection
 
     // Default to today
     dateInput.value = new Date().toISOString().split('T')[0];
@@ -70,17 +71,18 @@
         if (!gamePk) return;
 
         if (currentWs) { currentWs.close(); currentWs = null; }
+        previousScorecard = null;
 
         loadScorecardBtn.textContent = 'Loading...';
         loadScorecardBtn.disabled = true;
 
         try {
             const scorecard = await ScoresheetAPI.getScorecard(gamePk);
-            renderScorecard(scorecard);
+            renderScorecard(scorecard, false);
 
             if (scorecard.game_status === 'In Progress') {
                 currentWs = ScoresheetAPI.connectLive(gamePk, (msg) => {
-                    if (msg.type === 'scorecard') renderScorecard(msg.data);
+                    if (msg.type === 'scorecard') renderScorecard(msg.data, true);
                 });
             }
         } catch (err) {
@@ -91,12 +93,67 @@
         }
     });
 
+    // ─── Change Detection ─────────────────────────────────────
+
+    /**
+     * Build a fingerprint of each at-bat cell so we can detect which changed.
+     * Returns a Map of "side:playerId:inning" -> fingerprint string
+     */
+    function buildFingerprint(sc) {
+        const fp = new Map();
+        for (const [side, team] of [['away', sc.away_team], ['home', sc.home_team]]) {
+            if (!team) continue;
+            for (const player of (team.players || [])) {
+                for (const [inn, ab] of Object.entries(player.at_bats || {})) {
+                    const key = `${side}:${player.player_id}:${inn}`;
+                    // Fingerprint = result + pitch count + bases reached + rbi + out#
+                    const pitchSig = (ab.pitches || []).map(p => p.result).join('');
+                    fp.set(key, `${ab.result}|${pitchSig}|${ab.bases_reached}|${ab.rbi}|${ab.out_number}`);
+                }
+            }
+            // Also fingerprint the linescore
+            for (const it of (team.inning_totals || [])) {
+                fp.set(`${side}:linescore:${it.inning}`, `${it.runs}|${it.hits}|${it.errors}`);
+            }
+            fp.set(`${side}:totals`, `${team.total_runs}|${team.total_hits}|${team.total_errors}`);
+        }
+        return fp;
+    }
+
+    /**
+     * Compare old and new fingerprints, return set of changed keys.
+     */
+    function detectChanges(oldFp, newFp) {
+        const changed = new Set();
+        if (!oldFp) return changed; // first load, no changes
+        for (const [key, val] of newFp) {
+            if (!oldFp.has(key) || oldFp.get(key) !== val) {
+                changed.add(key);
+            }
+        }
+        return changed;
+    }
+
     // ─── Render ───────────────────────────────────────────────
 
-    function renderScorecard(sc) {
+    function renderScorecard(sc, isLiveUpdate) {
         const away = sc.away_team || {};
         const home = sc.home_team || {};
         const totalInnings = sc.total_innings || 9;
+
+        // Detect changes
+        const newFp = buildFingerprint(sc);
+        const changed = detectChanges(previousScorecard, newFp);
+        previousScorecard = newFp;
+
+        // Build changed-cells sets per side for the renderer
+        const changedCells = { away: new Set(), home: new Set() };
+        for (const key of changed) {
+            const parts = key.split(':');
+            const side = parts[0];  // "away" or "home"
+            if (parts[1] === 'linescore' || parts[1] === 'totals') continue;
+            changedCells[side].add(`${parts[1]}:${parts[2]}`); // "playerId:inning"
+        }
 
         // Show sections
         gameInfoEl.style.display = '';
@@ -107,23 +164,54 @@
         // Game info
         awayTeamEl.textContent = away.team_abbreviation || away.team_name || 'Away';
         homeTeamEl.textContent = home.team_abbreviation || home.team_name || 'Home';
-        gameStatusEl.textContent = sc.game_status || '';
+
+        // Live indicator
+        const isLive = sc.game_status === 'In Progress';
+        const statusText = isLive
+            ? `LIVE — ${sc.is_top_inning ? 'Top' : 'Bot'} ${sc.current_inning}`
+            : (sc.game_status || '');
+        gameStatusEl.textContent = statusText;
+        gameStatusEl.className = isLive ? 'live-pulse' : '';
+
         venueEl.textContent = `${sc.game_date || ''} \u2014 ${sc.venue || ''}`;
 
         // Team headers
         awayTeamNameEl.textContent = `${away.team_name || 'Away'} (Visiting)`;
         homeTeamNameEl.textContent = `${home.team_name || 'Home'}`;
 
-        // SVG scorecards
-        ScoresheetRenderer.render(awaySvg, away, totalInnings);
-        ScoresheetRenderer.render(homeSvg, home, totalInnings);
+        // SVG scorecards — pass changed cells for flash highlighting
+        ScoresheetRenderer.render(awaySvg, away, totalInnings,
+            isLiveUpdate ? changedCells.away : null);
+        ScoresheetRenderer.render(homeSvg, home, totalInnings,
+            isLiveUpdate ? changedCells.home : null);
 
         // Pitcher boxes
         renderPitcherBox(document.getElementById('away-pitchers'), away);
         renderPitcherBox(document.getElementById('home-pitchers'), home);
 
-        // Linescore
-        renderLinescore(sc, totalInnings);
+        // Linescore — flash if scores changed
+        const linescoreChanged = isLiveUpdate && [...changed].some(k => k.includes('linescore') || k.includes('totals'));
+        renderLinescore(sc, totalInnings, linescoreChanged);
+
+        // Flash the last-updated timestamp
+        if (isLiveUpdate && changed.size > 0 && isLive) {
+            showUpdateFlash();
+        }
+    }
+
+    function showUpdateFlash() {
+        let el = document.getElementById('update-flash');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'update-flash';
+            document.querySelector('header').appendChild(el);
+        }
+        const now = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+        el.textContent = `Updated ${now}`;
+        el.classList.remove('flash');
+        // Force reflow to restart animation
+        void el.offsetWidth;
+        el.classList.add('flash');
     }
 
     // ─── Pitcher Box ────────────────────────────────────────
@@ -141,7 +229,6 @@
         cols.forEach(c => { html += `<th>${c}</th>`; });
         html += '</tr></thead><tbody>';
 
-        // Totals accumulators
         let totIP = 0, totH = 0, totR = 0, totER = 0, totBB = 0, totK = 0, totHR = 0, totPC = 0, totST = 0;
 
         pitchers.forEach(p => {
@@ -163,12 +250,8 @@
             html += `<td>${pcStr}</td>`;
             html += '</tr>';
 
-            // Parse IP for totals (e.g., "5.2" means 5 and 2/3)
             const ipParts = String(p.ip).split('.');
-            const wholeInnings = parseInt(ipParts[0] || '0');
-            const thirds = parseInt(ipParts[1] || '0');
-            totIP += wholeInnings * 3 + thirds;
-
+            totIP += parseInt(ipParts[0] || '0') * 3 + parseInt(ipParts[1] || '0');
             totH += p.hits || 0;
             totR += p.runs || 0;
             totER += p.earned_runs || 0;
@@ -179,45 +262,34 @@
             totST += p.strikes || 0;
         });
 
-        // Totals row
-        const totalIPWhole = Math.floor(totIP / 3);
-        const totalIPThirds = totIP % 3;
-        const totalIPStr = `${totalIPWhole}.${totalIPThirds}`;
-
         html += '<tr class="totals-row">';
         html += `<td>TOTALS</td>`;
-        html += `<td>${totalIPStr}</td>`;
-        html += `<td>${totH}</td>`;
-        html += `<td>${totR}</td>`;
-        html += `<td>${totER}</td>`;
-        html += `<td>${totBB}</td>`;
-        html += `<td>${totK}</td>`;
-        html += `<td>${totHR}</td>`;
+        html += `<td>${Math.floor(totIP / 3)}.${totIP % 3}</td>`;
+        html += `<td>${totH}</td><td>${totR}</td><td>${totER}</td>`;
+        html += `<td>${totBB}</td><td>${totK}</td><td>${totHR}</td>`;
         html += `<td><span class="pitch-count">${totPC}-${totST}</span></td>`;
-        html += '</tr>';
-
-        html += '</tbody></table>';
+        html += '</tr></tbody></table>';
         container.innerHTML = html;
     }
 
     // ─── Linescore ────────────────────────────────────────────
 
-    function renderLinescore(sc, totalInnings) {
+    function renderLinescore(sc, totalInnings, flash) {
         const away = sc.away_team || {};
         const home = sc.home_team || {};
 
-        // Header
         linescoreHead.innerHTML = '<th></th>';
         for (let i = 1; i <= totalInnings; i++) {
             linescoreHead.innerHTML += `<th>${i}</th>`;
         }
         linescoreHead.innerHTML += '<th>R</th><th>H</th><th>E</th>';
 
-        // Rows
         linescoreBody.innerHTML = '';
 
         for (const data of [away, home]) {
             const tr = document.createElement('tr');
+            if (flash) tr.classList.add('linescore-flash');
+
             const td0 = document.createElement('td');
             td0.textContent = data.team_abbreviation || '';
             tr.appendChild(td0);

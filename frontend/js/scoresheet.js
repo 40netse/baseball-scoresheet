@@ -37,6 +37,7 @@ const ACCENT = '#b22222';    // out numbers, end-of-inning arrow
 const SCORE_FILL = '#2a2520';
 const HIT_REACHED = '#2e6b2e'; // green tint for reached-base sidebar highlight
 const REACH_BG = '#d8ecd8';
+const FLASH_BG = '#fff4b0';  // yellow flash for changed cells
 
 // Which sidebar labels map to which result codes
 const SIDEBAR_LABELS = ['HR', '3B', '2B', '1B', 'SAC', 'HP', 'BB'];
@@ -49,7 +50,13 @@ const REACH_MAP = {
 
 const ScoresheetRenderer = {
 
-    render(svgEl, teamData, totalInnings = 9) {
+    /**
+     * @param {SVGElement} svgEl
+     * @param {Object} teamData
+     * @param {number} totalInnings
+     * @param {Set|null} changedCells - Set of "playerId:inning" strings that changed (for flash)
+     */
+    render(svgEl, teamData, totalInnings = 9, changedCells = null) {
         svgEl.innerHTML = '';
 
         const players = teamData.players || [];
@@ -61,6 +68,22 @@ const ScoresheetRenderer = {
         svgEl.setAttribute('viewBox', `0 0 ${W} ${H}`);
         svgEl.style.width = '100%';
         svgEl.style.height = 'auto';
+
+        // SVG <defs> for flash animation
+        const defs = document.createElementNS(SVG_NS, 'defs');
+        svgEl.appendChild(defs);
+        const anim = document.createElementNS(SVG_NS, 'style');
+        anim.textContent = `
+            @keyframes cell-flash {
+                0%   { fill: ${FLASH_BG}; }
+                50%  { fill: ${FLASH_BG}; }
+                100% { fill: ${PAPER}; }
+            }
+            .cell-changed {
+                animation: cell-flash 2s ease-out 1;
+            }
+        `;
+        defs.appendChild(anim);
 
         // Paper background
         this._rect(svgEl, 0, 0, W, H, PAPER);
@@ -74,7 +97,7 @@ const ScoresheetRenderer = {
 
         // Player rows
         players.forEach((player, idx) => {
-            this._drawPlayerRow(contentLayer, player, idx, numInn, teamData);
+            this._drawPlayerRow(contentLayer, player, idx, numInn, teamData, changedCells);
         });
 
         // Grid lines (on top of backgrounds, below content text — but we draw grid last
@@ -110,7 +133,7 @@ const ScoresheetRenderer = {
 
     // ─── PLAYER ROW ───────────────────────────────────────────
 
-    _drawPlayerRow(layer, player, rowIdx, numInn, teamData) {
+    _drawPlayerRow(layer, player, rowIdx, numInn, teamData, changedCells) {
         const y = HDR_H + rowIdx * CELL_H;
         const g = this._g(layer, `p${rowIdx}`);
 
@@ -150,6 +173,14 @@ const ScoresheetRenderer = {
             const ab = atBats[String(inn)];
             if (ab) {
                 const cellX = HEADER_W + (inn - 1) * CELL_W;
+
+                // Flash background if this cell changed
+                const cellKey = `${player.player_id}:${inn}`;
+                if (changedCells && changedCells.has(cellKey)) {
+                    const flash = this._rect(g, cellX + 1, y + 1, CELL_W - 2, CELL_H - 2, FLASH_BG);
+                    flash.setAttribute('class', 'cell-changed');
+                }
+
                 this._drawAtBat(g, cellX, y, ab, teamData);
             }
         }
