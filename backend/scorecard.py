@@ -318,7 +318,9 @@ def _parse_runner_advancements(play_data: dict, batter_lineup_num: int) -> list[
             cs_str = "-".join(str(f) for f in cs_chain)
             method = f"CS {cs_str}" if cs_str else "CS"
         elif is_out and "force_out" in reason:
-            method = "FO"
+            fo_chain = _get_fielder_chain(r.get("credits", []))
+            fo_str = "-".join(str(f) for f in fo_chain)
+            method = fo_str if fo_str else "FO"
         elif "wild_pitch" in reason:
             method = "WP"
         elif "passed_ball" in reason:

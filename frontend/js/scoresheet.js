@@ -475,14 +475,24 @@ const ScoresheetRenderer = {
 
             if (from !== to || adv.is_out) {
                 if (adv.is_out) {
-                    // Runner was out: dashed red line + red X
+                    // Runner was out: slash line across the base path
+                    // Draw the base path as dashed red up to where they were out
                     const pathLine = this._seg(g, fromPt, toPt, ACCENT, 1.5);
                     pathLine.setAttribute('stroke-dasharray', '3,2');
-                    const xSize = 4;
-                    this._seg(g, [toPt[0] - xSize, toPt[1] - xSize],
-                                 [toPt[0] + xSize, toPt[1] + xSize], ACCENT, 2);
-                    this._seg(g, [toPt[0] + xSize, toPt[1] - xSize],
-                                 [toPt[0] - xSize, toPt[1] + xSize], ACCENT, 2);
+
+                    // Slash perpendicular to the base path at the midpoint
+                    const midX = (fromPt[0] + toPt[0]) / 2;
+                    const midY = (fromPt[1] + toPt[1]) / 2;
+                    // Perpendicular direction
+                    const dx = toPt[0] - fromPt[0];
+                    const dy = toPt[1] - fromPt[1];
+                    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                    const perpX = -dy / len * 6;
+                    const perpY = dx / len * 6;
+                    this._seg(g,
+                        [midX - perpX, midY - perpY],
+                        [midX + perpX, midY + perpY],
+                        ACCENT, 2);
                 }
                 // Successful advances by other runners are NOT drawn as bold lines
                 // here — the lineup number label is enough. The bold black lines
