@@ -348,55 +348,64 @@ const ScoresheetRenderer = {
         });
     },
 
-    // ─── PITCH COUNT BOXES ────────────────────────────────────
+    // ─── PITCH COUNT (B/S/Fouls) ────────────────────────────
 
     _drawPitchBoxes(g, cellX, cellY, pitches) {
-        const boxSize = 8;
-        const gap = 1;
-        const maxPerRow = 7;
-        const startX = cellX + 3;
-        const startY = cellY + CELL_H - 22;
-
-        pitches.forEach((p, i) => {
-            if (i >= 14) return; // max 2 rows of 7
-            const row = Math.floor(i / maxPerRow);
-            const col = i % maxPerRow;
-            const bx = startX + col * (boxSize + gap);
-            const by = startY + row * (boxSize + gap + 1);
-
-            let fill, stroke, txtFill;
+        // Count balls, strikes, fouls from pitch sequence
+        let balls = 0, strikes = 0, fouls = 0;
+        for (const p of pitches) {
             if (p.result === 'B') {
-                // Ball: open box
-                fill = 'none';
-                stroke = '#999';
-                txtFill = '#999';
+                balls++;
             } else if (p.result === 'F') {
-                // Foul: light fill
-                fill = '#e0ddd5';
-                stroke = '#999';
-                txtFill = '#666';
-            } else if (p.result === 'C') {
-                // Called strike: filled with different indicator
-                fill = INK;
-                stroke = INK;
-                txtFill = PAPER;
-            } else if (p.result === 'X') {
-                // In play: filled
-                fill = '#5a5a5a';
-                stroke = '#5a5a5a';
-                txtFill = PAPER;
+                fouls++;
             } else {
-                // Swinging strike: filled
-                fill = INK;
-                stroke = INK;
-                txtFill = PAPER;
+                // S, C, X all count as strikes (up to 2 filled boxes; 3rd ends AB)
+                strikes++;
             }
+        }
 
-            this._rect(g, bx, by, boxSize, boxSize, fill, stroke, 0.6);
-            this._txt(g, bx + boxSize / 2, by + boxSize - 1.5, String(i + 1), {
-                anchor: 'middle', size: 6, fill: txtFill,
-            });
+        const boxSize = 7;
+        const gap = 2;
+        const startX = cellX + 3;
+        const ballY = cellY + CELL_H - 28;
+        const strikeY = ballY + boxSize + gap;
+        const foulY = strikeY + boxSize + gap;
+
+        // 3 ball boxes — filled from left for each ball taken
+        for (let i = 0; i < 3; i++) {
+            const bx = startX + i * (boxSize + gap);
+            const filled = i < balls;
+            this._rect(g, bx, ballY, boxSize, boxSize,
+                filled ? '#4a7a4a' : 'none', '#999', 0.8);
+        }
+
+        // Label
+        this._txt(g, startX + 3 * (boxSize + gap) + 1, ballY + boxSize - 1, 'B', {
+            size: 6, fill: '#999'
         });
+
+        // 2 strike boxes — filled from left for each strike
+        for (let i = 0; i < 2; i++) {
+            const bx = startX + i * (boxSize + gap);
+            const filled = i < strikes;
+            this._rect(g, bx, strikeY, boxSize, boxSize,
+                filled ? ACCENT : 'none', '#999', 0.8);
+        }
+
+        // Label
+        this._txt(g, startX + 2 * (boxSize + gap) + 1, strikeY + boxSize - 1, 'S', {
+            size: 6, fill: '#999'
+        });
+
+        // Foul slashes
+        if (fouls > 0) {
+            for (let i = 0; i < Math.min(fouls, 6); i++) {
+                const fx = startX + i * 6;
+                this._txt(g, fx, foulY + 6, '/', {
+                    size: 8, fill: '#999'
+                });
+            }
+        }
     },
 
     // ─── HIT LINE ─────────────────────────────────────────────
