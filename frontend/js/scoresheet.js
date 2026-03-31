@@ -232,14 +232,16 @@ const ScoresheetRenderer = {
 
         const scored = (ab.bases_reached || 0) >= 4;
 
-        // Draw diamond — bold red fill when runner scores
+        // Draw diamond — dashed blue by default, solid red fill when scored
         const dPath = `M${pts.top[0]},${pts.top[1]}L${pts.right[0]},${pts.right[1]}` +
             `L${pts.bot[0]},${pts.bot[1]}L${pts.left[0]},${pts.left[1]}Z`;
-        const diamond = this._path(g, dPath, scored ? SCORE_FILL : 'none',
-            scored ? SCORE_FILL : INK, scored ? 2 : 1.2);
+        if (scored) {
+            this._path(g, dPath, SCORE_FILL, SCORE_FILL, 2);
+        } else {
+            const diamond = this._path(g, dPath, 'none', '#2266aa', 1.2);
+            diamond.setAttribute('stroke-dasharray', '4,3');
 
-        // Bold base-path lines for bases reached (skip if scored — solid fill says it all)
-        if (!scored) {
+            // Bold black base-path lines where the batter advanced
             const basesReached = ab.bases_reached || 0;
             if (basesReached >= 1) this._seg(g, pts.bot, pts.right, INK, 3);
             if (basesReached >= 2) this._seg(g, pts.right, pts.top, INK, 3);
