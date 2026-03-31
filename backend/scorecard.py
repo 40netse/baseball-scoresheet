@@ -471,26 +471,41 @@ def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
         if at_bat.bases_reached > 0:
             player_last_at_bat[batter_id] = at_bat
 
-        # Check ALL runners in this play for scoring — update their at-bat cells
-        for r in play.get("runners", []):
-            movement = r.get("movement", {})
-            if movement.get("end") == "score" and not movement.get("isOut", False):
-                runner_id = r.get("details", {}).get("runner", {}).get("id")
-                if runner_id and runner_id in player_last_at_bat:
-                    player_last_at_bat[runner_id].bases_reached = 4
-                    del player_last_at_bat[runner_id]  # they scored, no longer on base
-                elif runner_id == batter_id:
-                    # Batter scored on their own hit (HR, inside-the-park, etc.)
-                    at_bat.bases_reached = 4
-
-        # Parse runner advancements — look up batter's lineup number
+        # Attach runner advancements to the RUNNER's at-bat cell (not the batter's)
+        # so the lineup number and path lines appear on the correct row.
+        # Must happen BEFORE we remove scored runners from tracking.
         team_sc = scorecard.away_team if is_top else scorecard.home_team
         batter_lineup_num = 0
         for player_line in team_sc.players:
             if player_line.player_id == batter_id:
                 batter_lineup_num = player_line.batting_order
                 break
-        at_bat.runner_advancements = _parse_runner_advancements(play, batter_lineup_num)
+
+        advancements = _parse_runner_advancements(play, batter_lineup_num)
+        for adv in advancements:
+            runner_id = None
+            for r in play.get("runners", []):
+                r_name = r.get("details", {}).get("runner", {}).get("fullName", "")
+                r_id = r.get("details", {}).get("runner", {}).get("id")
+                if r_name == adv.runner_name and r_id:
+                    runner_id = r_id
+                    break
+            if runner_id and runner_id in player_last_at_bat:
+                player_last_at_bat[runner_id].runner_advancements.append(adv)
+            else:
+                at_bat.runner_advancements.append(adv)
+
+        # Check ALL runners in this play for scoring — update their at-bat cells
+        # Must happen AFTER advancements so runners are still in the tracking dict.
+        for r in play.get("runners", []):
+            movement = r.get("movement", {})
+            if movement.get("end") == "score" and not movement.get("isOut", False):
+                runner_id = r.get("details", {}).get("runner", {}).get("id")
+                if runner_id and runner_id in player_last_at_bat:
+                    player_last_at_bat[runner_id].bases_reached = 4
+                    del player_last_at_bat[runner_id]
+                elif runner_id == batter_id:
+                    at_bat.bases_reached = 4
 
         # Assign to the correct player line
         for player_line in team_sc.players:
