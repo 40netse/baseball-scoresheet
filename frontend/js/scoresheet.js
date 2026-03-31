@@ -226,15 +226,23 @@ const ScoresheetRenderer = {
         // ── Pitch count boxes (bottom-left of cell) ──
         this._drawPitchBoxes(g, x, y, ab.pitches || []);
 
-        // ── Result notation (center-bottom, below diamond) ──
+        // ── Strikeout: big K (or Kc) centered in the diamond ──
         const notation = ab.result || '';
-        // For outs with fielders, show notation; for reaches, sidebar handles it
-        if (ab.is_out || ab.result_type === 'out') {
+        const isStrikeout = notation === 'K' || notation === 'Ꝁ' || notation.startsWith('K ');
+        const isCalledStrikeout = notation === 'Ꝁ';
+
+        if (isStrikeout) {
+            const kLabel = isCalledStrikeout ? 'Kc' : 'K';
+            this._txt(g, cx, cy + 6, kLabel, {
+                anchor: 'middle', size: 22, bold: true, fill: ACCENT
+            });
+        } else if (ab.is_out || ab.result_type === 'out') {
+            // Other outs: notation below diamond
             this._txt(g, cx, y + CELL_H - 12, notation, {
                 anchor: 'middle', size: 10, bold: true
             });
         } else if (!REACH_MAP[notation]) {
-            // Show non-standard reach notations (FC, E-3, etc.)
+            // Non-standard reach notations (FC, E-3, etc.)
             this._txt(g, cx, y + CELL_H - 12, notation, {
                 anchor: 'middle', size: 10, bold: true
             });
