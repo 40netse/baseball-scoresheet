@@ -475,18 +475,18 @@ const ScoresheetRenderer = {
 
             if (from !== to || adv.is_out) {
                 if (adv.is_out) {
-                    // Runner was out: dashed blue line + red X
-                    const pathLine = this._seg(g, fromPt, toPt, '#2266aa', 2);
+                    // Runner was out: dashed red line + red X
+                    const pathLine = this._seg(g, fromPt, toPt, ACCENT, 1.5);
                     pathLine.setAttribute('stroke-dasharray', '3,2');
                     const xSize = 4;
                     this._seg(g, [toPt[0] - xSize, toPt[1] - xSize],
                                  [toPt[0] + xSize, toPt[1] + xSize], ACCENT, 2);
                     this._seg(g, [toPt[0] + xSize, toPt[1] - xSize],
                                  [toPt[0] - xSize, toPt[1] + xSize], ACCENT, 2);
-                } else {
-                    // Runner advanced: bold black line
-                    this._seg(g, fromPt, toPt, INK, 3);
                 }
+                // Successful advances by other runners are NOT drawn as bold lines
+                // here — the lineup number label is enough. The bold black lines
+                // on the runner's OWN at-bat cell show their progress.
             }
 
             // Label along the path
