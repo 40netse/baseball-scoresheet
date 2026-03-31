@@ -238,13 +238,13 @@ const ScoresheetRenderer = {
         const diamond = this._path(g, dPath, scored ? SCORE_FILL : 'none',
             scored ? SCORE_FILL : INK, scored ? 2 : 1.2);
 
-        // Bold base-path lines for bases reached
-        const basesReached = ab.bases_reached || 0;
-        const pathColor = scored ? '#fff' : INK;
-        if (basesReached >= 1) this._seg(g, pts.bot, pts.right, pathColor, 3);
-        if (basesReached >= 2) this._seg(g, pts.right, pts.top, pathColor, 3);
-        if (basesReached >= 3) this._seg(g, pts.top, pts.left, pathColor, 3);
-        if (basesReached >= 4) this._seg(g, pts.left, pts.bot, pathColor, 3);
+        // Bold base-path lines for bases reached (skip if scored — solid fill says it all)
+        if (!scored) {
+            const basesReached = ab.bases_reached || 0;
+            if (basesReached >= 1) this._seg(g, pts.bot, pts.right, INK, 3);
+            if (basesReached >= 2) this._seg(g, pts.right, pts.top, INK, 3);
+            if (basesReached >= 3) this._seg(g, pts.top, pts.left, INK, 3);
+        }
 
         // Hit line from home plate into the field
         if (ab.hit_type && ab.result_type === 'hit') {
