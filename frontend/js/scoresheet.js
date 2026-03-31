@@ -471,19 +471,19 @@ const ScoresheetRenderer = {
             const fromPt = baseCoords[from] || baseCoords[0];
             const toPt = baseCoords[to] || baseCoords[from] || baseCoords[0];
 
-            // Draw the advancement path line along the diamond edge
-            // Use a dashed blue line so it's distinct from the batter's bold black paths
             if (from !== to || adv.is_out) {
-                const pathLine = this._seg(g, fromPt, toPt, '#2266aa', 2);
-                pathLine.setAttribute('stroke-dasharray', '3,2');
-
-                // If runner was out, draw an X at the destination
                 if (adv.is_out) {
+                    // Runner was out: dashed blue line + red X
+                    const pathLine = this._seg(g, fromPt, toPt, '#2266aa', 2);
+                    pathLine.setAttribute('stroke-dasharray', '3,2');
                     const xSize = 4;
                     this._seg(g, [toPt[0] - xSize, toPt[1] - xSize],
                                  [toPt[0] + xSize, toPt[1] + xSize], ACCENT, 2);
                     this._seg(g, [toPt[0] + xSize, toPt[1] - xSize],
                                  [toPt[0] - xSize, toPt[1] + xSize], ACCENT, 2);
+                } else {
+                    // Runner advanced: bold black line
+                    this._seg(g, fromPt, toPt, INK, 3);
                 }
             }
 
