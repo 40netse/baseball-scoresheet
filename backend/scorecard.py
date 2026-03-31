@@ -260,8 +260,12 @@ def translate_play_to_notation(play_data: dict) -> tuple[str, str, str, list[int
     return event or "?", "out" if result.get("isOut") else "reach", hit_type, fielders
 
 
-def _parse_runner_advancements(play_data: dict, batter_at_bat_index: int) -> list[BaseAdvancement]:
-    """Parse runner movements from a play (excluding the batter's own movement)."""
+def _parse_runner_advancements(play_data: dict, batter_lineup_num: int) -> list[BaseAdvancement]:
+    """Parse runner movements from a play (excluding the batter's own movement).
+
+    batter_lineup_num: the batting order # (1-9) of the current batter,
+    used for traditional BA notation (e.g., "5" means advanced by #5 hitter).
+    """
     advancements = []
     runners = play_data.get("runners", [])
 
@@ -285,15 +289,15 @@ def _parse_runner_advancements(play_data: dict, batter_at_bat_index: int) -> lis
         runner_name = details.get("runner", {}).get("fullName", "")
 
         # Determine the method annotation
+        # For batter-advanced, use the batter's lineup number (traditional notation)
+        batter_num_str = str(batter_lineup_num) if batter_lineup_num else ""
         method = ""
         if "stolen_base" in reason:
-            to_base_name = {1: "1st", 2: "2nd", 3: "3rd", 4: "home"}.get(to_base, "")
             method = f"SB{to_base}"
         elif "r_adv_force" in reason:
-            # Find batter's batting order position for BA notation
-            method = f"BA"
+            method = batter_num_str
         elif "r_adv_play" in reason:
-            method = f"BA"
+            method = batter_num_str
         elif "caught_stealing" in event_type:
             cs_chain = _get_fielder_chain(r.get("credits", []))
             cs_str = "-".join(str(f) for f in cs_chain)
@@ -309,7 +313,7 @@ def _parse_runner_advancements(play_data: dict, batter_at_bat_index: int) -> lis
         elif "pickoff" in event_type:
             method = "PO"
         else:
-            method = "BA"
+            method = batter_num_str
 
         # Get fielder credits for outs
         fielder_credits = ""
@@ -479,11 +483,16 @@ def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
                     # Batter scored on their own hit (HR, inside-the-park, etc.)
                     at_bat.bases_reached = 4
 
-        # Parse runner advancements (other runners on base)
-        at_bat.runner_advancements = _parse_runner_advancements(play, at_bat_index)
+        # Parse runner advancements — look up batter's lineup number
+        team_sc = scorecard.away_team if is_top else scorecard.home_team
+        batter_lineup_num = 0
+        for player_line in team_sc.players:
+            if player_line.player_id == batter_id:
+                batter_lineup_num = player_line.batting_order
+                break
+        at_bat.runner_advancements = _parse_runner_advancements(play, batter_lineup_num)
 
         # Assign to the correct player line
-        team_sc = scorecard.away_team if is_top else scorecard.home_team
         for player_line in team_sc.players:
             if player_line.player_id == batter_id:
                 # Handle multiple at-bats in same inning (use inning * 100 + count)
