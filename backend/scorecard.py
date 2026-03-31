@@ -269,13 +269,20 @@ def _parse_runner_advancements(play_data: dict, batter_lineup_num: int) -> list[
     advancements = []
     runners = play_data.get("runners", [])
 
+    batter_initial_seen = False
     for r in runners:
         movement = r.get("movement", {})
         origin = movement.get("originBase")
 
-        # Skip the batter (originBase is None for the batter)
+        # For the batter (originBase is None): skip the first entry (initial reach),
+        # but process subsequent entries (extra advancement on errors, WP, etc.)
         if origin is None:
-            continue
+            if not batter_initial_seen:
+                batter_initial_seen = True
+                continue
+            # This is an extra advancement by the batter (error, WP, etc.)
+            # Use 'start' field which has the actual starting base (e.g., "1B")
+            origin = movement.get("start")
 
         from_base = BASE_MAP.get(origin, 0)
         end = movement.get("end")
@@ -294,6 +301,14 @@ def _parse_runner_advancements(play_data: dict, batter_lineup_num: int) -> list[
         method = ""
         if "stolen_base" in reason:
             method = f"SB{to_base}"
+        elif event_type == "error":
+            # Advancement on an error — find the fielder who committed it
+            error_pos = ""
+            for c in r.get("credits", []):
+                if "error" in c.get("credit", ""):
+                    error_pos = c.get("position", {}).get("code", "")
+                    break
+            method = f"E-{error_pos}" if error_pos else "E"
         elif "r_adv_force" in reason:
             method = batter_num_str
         elif "r_adv_play" in reason:
