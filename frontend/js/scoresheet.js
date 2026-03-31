@@ -194,10 +194,8 @@ const ScoresheetRenderer = {
         let ab = 0, r = 0, h = 0, rbi = 0;
         for (const [, pa] of Object.entries(atBats)) {
             // AB excludes walks, HBP, sacrifices
-            const res = (pa.result || '').toUpperCase();
-            const isNotAB = ['BB', 'IBB', 'HP', 'HBP', 'SAC', 'SF', 'INT'].some(x =>
-                res === x || res.startsWith('SF ') || res.startsWith('SAC ')
-            );
+            const res = (pa.result || '').split('\n')[0].toUpperCase();
+            const isNotAB = ['BB', 'IBB', 'HP', 'HBP', 'SAC', 'SF', 'INT'].includes(res);
             if (!isNotAB) ab++;
             if (pa.bases_reached >= 4) r++;
             if (['1B', '2B', '3B', 'HR'].includes(res)) h++;
@@ -267,13 +265,23 @@ const ScoresheetRenderer = {
             this._txt(g, cx, cy + 6, kLabel, {
                 anchor: 'middle', size: 22, bold: true, fill: ACCENT
             });
-        } else if (ab.is_out || ab.result_type === 'out') {
-            // Other outs: notation centered inside the diamond, bold
-            const outSize = notation.length > 6 ? 9 : notation.length > 4 ? 10 : 12;
-            this._txt(g, cx, cy + 5, notation, {
-                anchor: 'middle', size: outSize, bold: true
-            });
-        } else if (!REACH_MAP[notation]) {
+        } else if (ab.is_out || ab.result_type === 'out' || ab.result_type === 'sacrifice') {
+            // Render notation inside diamond — handle multi-line (e.g., "SAC\nF-7")
+            const lines = notation.split('\n');
+            if (lines.length > 1) {
+                this._txt(g, cx, cy, lines[0], {
+                    anchor: 'middle', size: 11, bold: true
+                });
+                this._txt(g, cx, cy + 13, lines[1], {
+                    anchor: 'middle', size: 10, bold: true
+                });
+            } else {
+                const outSize = notation.length > 6 ? 9 : notation.length > 4 ? 10 : 12;
+                this._txt(g, cx, cy + 5, notation, {
+                    anchor: 'middle', size: outSize, bold: true
+                });
+            }
+        } else if (!REACH_MAP[notation] && !REACH_MAP[notation.split('\n')[0]]) {
             // Non-standard reach notations (FC, E-3, etc.) inside diamond
             this._txt(g, cx, cy + 5, notation, {
                 anchor: 'middle', size: 12, bold: true
@@ -319,8 +327,9 @@ const ScoresheetRenderer = {
     _drawSidebar(g, cellX, cellY, ab) {
         const sx = cellX + CELL_W - SIDEBAR_W;
         const labelH = CELL_H / SIDEBAR_LABELS.length;
-        const result = (ab.result || '').toUpperCase();
-        const matched = REACH_MAP[result] || null;
+        const resultFull = (ab.result || '').toUpperCase();
+        const resultFirst = resultFull.split('\n')[0];  // first line for multi-line notations
+        const matched = REACH_MAP[resultFull] || REACH_MAP[resultFirst] || null;
 
         // Sidebar separator line
         this._seg(g, [sx, cellY + 1], [sx, cellY + CELL_H - 1], GRID_LIGHT, 0.5);

@@ -166,10 +166,10 @@ def translate_play_to_notation(play_data: dict) -> tuple[str, str, str, list[int
 
     # Sacrifices
     if event_type == "sac_fly":
-        notation = f"SF {fielder_str}" if fielder_str else "SF"
+        notation = f"SAC\nF-{fielder_str}" if fielder_str else "SAC"
         return notation, "sacrifice", "F", fielders
     if event_type in ("sac_bunt", "sac_bunt_double_play"):
-        notation = f"SAC {fielder_str}" if fielder_str else "SAC"
+        notation = f"SAC\n{fielder_str}" if fielder_str else "SAC"
         if "double_play" in event_type:
             notation += " DP"
         return notation, "sacrifice", "G", fielders
