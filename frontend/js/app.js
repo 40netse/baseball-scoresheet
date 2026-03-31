@@ -15,6 +15,8 @@
     const homeTeamNameEl = document.getElementById('home-team-name');
     const awaySvg = document.getElementById('away-scorecard');
     const homeSvg = document.getElementById('home-scorecard');
+    const linescoreBody = document.querySelector('#linescore tbody');
+    const linescoreHead = document.querySelector('#linescore thead tr');
 
     let currentWs = null;
 
@@ -22,7 +24,6 @@
     const today = new Date().toISOString().split('T')[0];
     dateInput.value = today;
 
-    // Load games for the selected date
     loadGamesBtn.addEventListener('click', async () => {
         const date = dateInput.value;
         if (!date) return;
@@ -46,31 +47,30 @@
             }
         } catch (err) {
             console.error('Failed to load games:', err);
-            gameList.innerHTML = '<option value="">Error loading games</option>';
+            gameList.innerHTML = '<option value="">Error loading games - is the backend running?</option>';
         }
     });
 
-    // Enable load button when a game is selected
     gameList.addEventListener('change', () => {
         loadScorecardBtn.disabled = !gameList.value;
     });
 
-    // Load scorecard for the selected game
     loadScorecardBtn.addEventListener('click', async () => {
         const gamePk = gameList.value;
         if (!gamePk) return;
 
-        // Close existing WebSocket
         if (currentWs) {
             currentWs.close();
             currentWs = null;
         }
 
+        loadScorecardBtn.textContent = 'Loading...';
+        loadScorecardBtn.disabled = true;
+
         try {
             const scorecard = await ScoresheetAPI.getScorecard(gamePk);
             renderScorecard(scorecard);
 
-            // If game is live, connect WebSocket
             if (scorecard.game_status === 'In Progress') {
                 currentWs = ScoresheetAPI.connectLive(gamePk, (msg) => {
                     if (msg.type === 'scorecard') {
@@ -80,20 +80,76 @@
             }
         } catch (err) {
             console.error('Failed to load scorecard:', err);
+        } finally {
+            loadScorecardBtn.textContent = 'Load Scorecard';
+            loadScorecardBtn.disabled = false;
         }
     });
 
     function renderScorecard(scorecard) {
-        // Update game info
-        awayTeamEl.textContent = scorecard.away_team?.team_name || 'Away';
-        homeTeamEl.textContent = scorecard.home_team?.team_name || 'Home';
-        gameStatusEl.textContent = scorecard.game_status || '';
-        venueEl.textContent = scorecard.venue || '';
-        awayTeamNameEl.textContent = scorecard.away_team?.team_name || 'Away';
-        homeTeamNameEl.textContent = scorecard.home_team?.team_name || 'Home';
+        const away = scorecard.away_team || {};
+        const home = scorecard.home_team || {};
+        const totalInnings = scorecard.total_innings || 9;
 
-        // Render scorecards
-        ScoresheetRenderer.render(awaySvg, scorecard.away_team || {});
-        ScoresheetRenderer.render(homeSvg, scorecard.home_team || {});
+        // Game info bar
+        awayTeamEl.textContent = away.team_abbreviation || away.team_name || 'Away';
+        homeTeamEl.textContent = home.team_abbreviation || home.team_name || 'Home';
+        gameStatusEl.textContent = scorecard.game_status || '';
+        venueEl.textContent = `${scorecard.game_date || ''} — ${scorecard.venue || ''}`;
+
+        // Team headers
+        awayTeamNameEl.textContent = away.team_name || 'Away';
+        homeTeamNameEl.textContent = home.team_name || 'Home';
+
+        // Render SVG scorecards
+        ScoresheetRenderer.render(awaySvg, away, totalInnings);
+        ScoresheetRenderer.render(homeSvg, home, totalInnings);
+
+        // Line score table
+        renderLinescore(scorecard);
+    }
+
+    function renderLinescore(scorecard) {
+        const away = scorecard.away_team || {};
+        const home = scorecard.home_team || {};
+        const totalInnings = scorecard.total_innings || 9;
+
+        // Rebuild header
+        linescoreHead.innerHTML = '<th>Team</th>';
+        for (let i = 1; i <= totalInnings; i++) {
+            linescoreHead.innerHTML += `<th>${i}</th>`;
+        }
+        linescoreHead.innerHTML += '<th>R</th><th>H</th><th>E</th>';
+
+        // Build rows
+        linescoreBody.innerHTML = '';
+
+        for (const [team, data] of [['away', away], ['home', home]]) {
+            const tr = document.createElement('tr');
+            const nameTd = document.createElement('td');
+            nameTd.textContent = data.team_abbreviation || data.team_name || '';
+            tr.appendChild(nameTd);
+
+            const inningTotals = data.inning_totals || [];
+            const inningMap = {};
+            inningTotals.forEach(it => { inningMap[it.inning] = it; });
+
+            for (let i = 1; i <= totalInnings; i++) {
+                const td = document.createElement('td');
+                const it = inningMap[i];
+                td.textContent = it ? String(it.runs) : '';
+                tr.appendChild(td);
+            }
+
+            // R, H, E
+            for (const val of [data.total_runs || 0, data.total_hits || 0, data.total_errors || 0]) {
+                const td = document.createElement('td');
+                td.textContent = String(val);
+                td.style.fontWeight = 'bold';
+                tr.appendChild(td);
+            }
+
+            linescoreBody.appendChild(tr);
+        }
     }
 })();

@@ -1,17 +1,16 @@
 """Translates MLB Stats API play-by-play data into traditional scorecard notation."""
 
 from models import (
-    AtBat, BaseAdvancement, GameScorecard, InningHalf, Pitch,
-    PitchResult, PlayerLine, TeamScorecard,
+    AtBat, BaseAdvancement, GameScorecard, InningTotals,
+    Pitch, PlayerLine, TeamScorecard, BASE_MAP,
 )
 
 # MLB API position abbreviations to position numbers
 POSITION_TO_NUMBER = {
     "P": 1, "C": 2, "1B": 3, "2B": 4, "3B": 5,
     "SS": 6, "LF": 7, "CF": 8, "RF": 9, "DH": 0,
+    "PH": 0, "PR": 0,
 }
-
-NUMBER_TO_POSITION = {v: k for k, v in POSITION_TO_NUMBER.items()}
 
 
 def parse_pitch(pitch_data: dict) -> Pitch:
@@ -21,67 +20,318 @@ def parse_pitch(pitch_data: dict) -> Pitch:
     velocity = pitch_data.get("pitchData", {}).get("startSpeed")
 
     result_map = {
-        "B": PitchResult.BALL,
-        "S": PitchResult.STRIKE_SWINGING,
-        "C": PitchResult.STRIKE_LOOKING,
-        "F": PitchResult.FOUL,
-        "X": PitchResult.IN_PLAY,
-        "D": PitchResult.IN_PLAY,
-        "E": PitchResult.IN_PLAY,
+        "B": "B",           # Ball
+        "S": "S",           # Swinging strike
+        "W": "S",           # Swinging strike (blocked)
+        "C": "C",           # Called strike (looking)
+        "F": "F",           # Foul
+        "X": "X",           # In play, out(s)
+        "D": "X",           # In play, no out
+        "E": "X",           # In play, run(s)
     }
-    result = result_map.get(call, PitchResult.BALL)
+    result = result_map.get(call, "B")
 
     return Pitch(
         result=result,
         pitch_type=pitch_type,
         velocity=velocity,
+        sequence_number=pitch_data.get("pitchNumber", 0),
     )
 
 
-def translate_play_to_notation(play_data: dict) -> str:
+def _get_fielder_chain(credits_list: list) -> list[int]:
+    """Extract ordered fielder position numbers from a runner's credits array.
+
+    Credits come as: f_fielded_ball -> f_assist(s) -> f_putout
+    We want them in traditional notation order: assist(s) then putout.
+    """
+    assists = []
+    putout = None
+    fielded = None
+
+    for credit in credits_list:
+        pos_code = credit.get("position", {}).get("code", "0")
+        try:
+            pos_num = int(pos_code)
+        except ValueError:
+            continue
+
+        credit_type = credit.get("credit", "")
+        if credit_type == "f_putout":
+            putout = pos_num
+        elif credit_type == "f_assist":
+            assists.append(pos_num)
+        elif credit_type == "f_fielded_ball":
+            fielded = pos_num
+
+    # Build chain: assists then putout
+    chain = assists[:]
+    if putout is not None and putout not in chain:
+        chain.append(putout)
+
+    # If no assists but we have fielded + putout and they're different
+    if not assists and fielded and putout and fielded != putout:
+        chain = [fielded, putout]
+
+    # Unassisted putout (fly out, etc.)
+    if not chain and putout is not None:
+        chain = [putout]
+    if not chain and fielded is not None:
+        chain = [fielded]
+
+    return chain
+
+
+def _get_hit_trajectory(play_data: dict) -> str:
+    """Determine hit trajectory (G/L/F/P) from play events."""
+    for event in play_data.get("playEvents", []):
+        if event.get("isPitch") and event.get("details", {}).get("isInPlay"):
+            hit_data = event.get("hitData", {})
+            trajectory = hit_data.get("trajectory", "")
+            traj_map = {
+                "ground_ball": "G",
+                "line_drive": "L",
+                "fly_ball": "F",
+                "popup": "P",
+            }
+            return traj_map.get(trajectory, "")
+    return ""
+
+
+def _is_strikeout_looking(play_data: dict) -> bool:
+    """Check if a strikeout was called (looking) vs swinging."""
+    desc = play_data.get("result", {}).get("description", "")
+    if "called out on strikes" in desc.lower():
+        return True
+    # Also check the final pitch
+    for event in reversed(play_data.get("playEvents", [])):
+        if event.get("isPitch"):
+            call = event.get("details", {}).get("call", {}).get("code", "")
+            return call == "C"
+    return False
+
+
+def translate_play_to_notation(play_data: dict) -> tuple[str, str, str, list[int]]:
     """Convert an MLB API play result into traditional scorecard notation.
 
-    Examples: '1B', 'K', 'L-4', '6-4-3 DP', 'F-8', 'HR'
+    Returns:
+        (notation, result_type, hit_type, fielders)
+        notation: e.g., "1B", "K", "L-4", "6-4-3 DP", "F-8", "HR"
+        result_type: "hit", "out", "reach", "sacrifice"
+        hit_type: "G", "L", "F", "P" or ""
+        fielders: list of position numbers involved
     """
     result = play_data.get("result", {})
     event = result.get("event", "")
     event_type = result.get("eventType", "")
-    description = result.get("description", "")
+    runners = play_data.get("runners", [])
 
-    # Map common events to notation
-    event_map = {
-        "Single": "1B",
-        "Double": "2B",
-        "Triple": "3B",
-        "Home Run": "HR",
-        "Walk": "BB",
-        "Intent Walk": "IBB",
-        "Hit By Pitch": "HP",
-        "Strikeout": "K",
-        "Strikeout Double Play": "K",
-        "Sac Bunt": "SAC",
-        "Sac Fly": "SAC",
-        "Sac Fly Double Play": "SAC",
-    }
+    hit_type = _get_hit_trajectory(play_data)
 
-    notation = event_map.get(event, event)
+    # Find the batter's runner entry to get fielder credits
+    batter_runner = None
+    for r in runners:
+        if r.get("movement", {}).get("originBase") is None:
+            batter_runner = r
+            break
 
-    # For outs, try to extract fielder sequence from the play
-    if event_type in ("field_out", "force_out", "fielders_choice",
-                      "grounded_into_double_play", "double_play",
-                      "triple_play", "field_error"):
-        # TODO: Parse fielder credits from the detailed play data
-        # to produce notation like "6-4-3 DP", "F-8", "L-4", "G 5-3"
-        pass
+    fielders = []
+    if batter_runner:
+        fielders = _get_fielder_chain(batter_runner.get("credits", []))
 
-    return notation
+    fielder_str = "-".join(str(f) for f in fielders)
+
+    # Hits
+    if event_type == "single":
+        return f"1B", "hit", hit_type, fielders
+    if event_type == "double":
+        return f"2B", "hit", hit_type, fielders
+    if event_type == "triple":
+        return f"3B", "hit", hit_type, fielders
+    if event_type == "home_run":
+        return "HR", "hit", hit_type, fielders
+
+    # Walks / HBP
+    if event_type in ("walk", "intent_walk"):
+        return "BB", "reach", "", []
+    if event_type == "hit_by_pitch":
+        return "HP", "reach", "", []
+
+    # Strikeouts
+    if event_type in ("strikeout", "strikeout_double_play"):
+        k = "Ꝁ" if _is_strikeout_looking(play_data) else "K"
+        if "double_play" in event_type:
+            k += " DP"
+        return k, "out", "", [2]  # putout credited to catcher
+
+    # Sacrifices
+    if event_type == "sac_fly":
+        notation = f"SF {fielder_str}" if fielder_str else "SF"
+        return notation, "sacrifice", "F", fielders
+    if event_type in ("sac_bunt", "sac_bunt_double_play"):
+        notation = f"SAC {fielder_str}" if fielder_str else "SAC"
+        if "double_play" in event_type:
+            notation += " DP"
+        return notation, "sacrifice", "G", fielders
+
+    # Field outs (groundout, flyout, lineout, pop out)
+    if event_type == "field_out":
+        event_name = event.lower()
+        if "groundout" in event_name:
+            prefix = "G" if not fielder_str else ""
+            notation = f"{prefix}{fielder_str}" if fielder_str else "G"
+            return notation, "out", "G", fielders
+        elif "lineout" in event_name:
+            notation = f"L-{fielder_str}" if fielder_str else "L"
+            return notation, "out", "L", fielders
+        elif "flyout" in event_name or "fly" in event_name:
+            notation = f"F-{fielder_str}" if fielder_str else "F"
+            return notation, "out", "F", fielders
+        elif "pop" in event_name:
+            notation = f"P-{fielder_str}" if fielder_str else "P"
+            return notation, "out", "P", fielders
+        else:
+            notation = fielder_str if fielder_str else event
+            return notation, "out", hit_type, fielders
+
+    # Double plays
+    if event_type in ("grounded_into_double_play", "double_play"):
+        # Get the full fielder chain from ALL runner credits
+        all_fielders = []
+        for r in runners:
+            if r.get("movement", {}).get("isOut"):
+                chain = _get_fielder_chain(r.get("credits", []))
+                for f in chain:
+                    if f not in all_fielders:
+                        all_fielders.append(f)
+        if all_fielders:
+            fielder_str = "-".join(str(f) for f in all_fielders)
+        notation = f"{fielder_str} DP" if fielder_str else "DP"
+        return notation, "out", "G", all_fielders or fielders
+
+    # Triple play
+    if event_type == "triple_play":
+        return "TP", "out", "", fielders
+
+    # Force out / fielder's choice
+    if event_type == "force_out":
+        notation = f"FC {fielder_str}" if fielder_str else "FC"
+        return notation, "reach", hit_type, fielders
+    if event_type == "fielders_choice":
+        notation = f"FC {fielder_str}" if fielder_str else "FC"
+        return notation, "reach", hit_type, fielders
+    if event_type == "fielders_choice_out":
+        notation = f"FC {fielder_str}" if fielder_str else "FC"
+        return notation, "out", hit_type, fielders
+
+    # Errors
+    if event_type == "field_error":
+        # Find which fielder committed the error
+        error_fielder = ""
+        for r in runners:
+            for c in r.get("credits", []):
+                if c.get("credit") == "f_fielding_error":
+                    pos = c.get("position", {}).get("code", "")
+                    error_fielder = pos
+                    break
+        notation = f"E-{error_fielder}" if error_fielder else "E"
+        return notation, "reach", hit_type, fielders
+
+    # Caught stealing
+    if "caught_stealing" in event_type:
+        cs_fielders = []
+        for r in runners:
+            if r.get("movement", {}).get("isOut"):
+                cs_fielders = _get_fielder_chain(r.get("credits", []))
+                break
+        cs_str = "-".join(str(f) for f in cs_fielders)
+        notation = f"CS {cs_str}" if cs_str else "CS"
+        return notation, "out", "", cs_fielders
+
+    # Pickoff
+    if "pickoff" in event_type:
+        return "PO", "out", "", fielders
+
+    # Interference
+    if event_type == "catcher_interf":
+        return "INT", "reach", "", []
+
+    # Fallback
+    return event or "?", "out" if result.get("isOut") else "reach", hit_type, fielders
+
+
+def _parse_runner_advancements(play_data: dict, batter_at_bat_index: int) -> list[BaseAdvancement]:
+    """Parse runner movements from a play (excluding the batter's own movement)."""
+    advancements = []
+    runners = play_data.get("runners", [])
+
+    for r in runners:
+        movement = r.get("movement", {})
+        origin = movement.get("originBase")
+
+        # Skip the batter (originBase is None for the batter)
+        if origin is None:
+            continue
+
+        from_base = BASE_MAP.get(origin, 0)
+        end = movement.get("end")
+        to_base = BASE_MAP.get(end, 0)
+        is_out = movement.get("isOut", False)
+        out_number = movement.get("outNumber")
+
+        details = r.get("details", {})
+        reason = details.get("movementReason", "") or ""
+        event_type = details.get("eventType", "") or ""
+        runner_name = details.get("runner", {}).get("fullName", "")
+
+        # Determine the method annotation
+        method = ""
+        if "stolen_base" in reason:
+            to_base_name = {1: "1st", 2: "2nd", 3: "3rd", 4: "home"}.get(to_base, "")
+            method = f"SB{to_base}"
+        elif "r_adv_force" in reason:
+            # Find batter's batting order position for BA notation
+            method = f"BA"
+        elif "r_adv_play" in reason:
+            method = f"BA"
+        elif "caught_stealing" in event_type:
+            cs_chain = _get_fielder_chain(r.get("credits", []))
+            cs_str = "-".join(str(f) for f in cs_chain)
+            method = f"CS {cs_str}" if cs_str else "CS"
+        elif is_out and "force_out" in reason:
+            method = "FO"
+        elif "wild_pitch" in reason:
+            method = "WP"
+        elif "passed_ball" in reason:
+            method = "PB"
+        elif "balk" in reason:
+            method = "BK"
+        elif "pickoff" in event_type:
+            method = "PO"
+        else:
+            method = "BA"
+
+        # Get fielder credits for outs
+        fielder_credits = ""
+        if is_out:
+            chain = _get_fielder_chain(r.get("credits", []))
+            fielder_credits = "-".join(str(f) for f in chain)
+
+        advancements.append(BaseAdvancement(
+            runner_name=runner_name,
+            from_base=from_base,
+            to_base=to_base if not is_out else 0,
+            method=method,
+            is_out=is_out,
+            out_number=out_number,
+            fielder_credits=fielder_credits,
+        ))
+
+    return advancements
 
 
 def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
-    """Build a complete GameScorecard from an MLB Stats API live feed response.
-
-    This is the main entry point for converting API data to scorecard format.
-    """
+    """Build a complete GameScorecard from an MLB Stats API live feed response."""
     game_data = feed_data.get("gameData", {})
     live_data = feed_data.get("liveData", {})
     plays = live_data.get("plays", {})
@@ -112,65 +362,151 @@ def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
         ),
     )
 
-    # Build player lines from boxscore
+    # Build player lines from boxscore, handling substitutions
     boxscore = live_data.get("boxscore", {})
-    for side, team_scorecard in [("away", scorecard.away_team), ("home", scorecard.home_team)]:
+    for side, team_sc in [("away", scorecard.away_team), ("home", scorecard.home_team)]:
         team_box = boxscore.get("teams", {}).get(side, {})
-        batting_order = team_box.get("battingOrder", [])
         players_data = team_box.get("players", {})
+        batters = team_box.get("batters", [])
 
-        for order_idx, player_id in enumerate(batting_order):
+        # Group players by batting order slot
+        order_slots = {}  # slot_num -> list of (seq, player_data)
+        for player_id in batters:
             player_key = f"ID{player_id}"
             player = players_data.get(player_key, {})
-            person = player.get("person", {})
-            position = player.get("position", {}).get("abbreviation", "")
+            batting_order_str = player.get("battingOrder", "000")
+            try:
+                bo = int(batting_order_str)
+            except (ValueError, TypeError):
+                continue
+            slot = bo // 100       # 1-9 lineup position
+            seq = bo % 100         # 00=starter, 01=first sub, etc.
+            if slot == 0:
+                continue
+            if slot not in order_slots:
+                order_slots[slot] = []
+            order_slots[slot].append((seq, player_id, player))
 
-            team_scorecard.players.append(PlayerLine(
-                name=person.get("fullName", "Unknown"),
-                number=person.get("id", 0),
-                position=position,
-                batting_order=order_idx + 1,
-            ))
+        # Sort each slot by sequence and add to players list
+        for slot in sorted(order_slots.keys()):
+            entries = sorted(order_slots[slot], key=lambda x: x[0])
+            for seq, player_id, player in entries:
+                person = player.get("person", {})
+                position = player.get("position", {}).get("abbreviation", "")
+                jersey = player.get("jerseyNumber", "")
+
+                team_sc.players.append(PlayerLine(
+                    name=person.get("fullName", "Unknown"),
+                    player_id=person.get("id", 0),
+                    position=position,
+                    jersey_number=jersey,
+                    batting_order=slot,
+                    batting_order_seq=seq,
+                ))
 
     # Process all plays
     all_plays = plays.get("allPlays", [])
+    # Track which at-bat number each batter is at within each inning for "through the order"
+    # A player can bat multiple times in extra innings or big innings
+    player_inning_count = {}  # (player_id, inning) -> count
+
     for play in all_plays:
         about = play.get("about", {})
         inning = about.get("inning", 0)
         is_top = about.get("isTopInning", True)
+        at_bat_index = about.get("atBatIndex", 0)
 
-        # Build at-bat from play data
-        batter = play.get("matchup", {}).get("batter", {})
+        # Build at-bat
+        matchup = play.get("matchup", {})
+        batter = matchup.get("batter", {})
+        batter_id = batter.get("id", 0)
+
         at_bat = AtBat(
             batter_name=batter.get("fullName", "Unknown"),
-            batter_number=batter.get("id", 0),
+            batter_id=batter_id,
+            inning=inning,
         )
 
         # Parse pitches
-        play_events = play.get("playEvents", [])
-        for event in play_events:
+        for event in play.get("playEvents", []):
             if event.get("isPitch", False):
                 at_bat.pitches.append(parse_pitch(event))
 
         # Parse result
-        at_bat.result = translate_play_to_notation(play)
+        notation, result_type, hit_type, fielders = translate_play_to_notation(play)
+        at_bat.result = notation
+        at_bat.result_type = result_type
+        at_bat.hit_type = hit_type
+        at_bat.fielders = fielders
 
         result = play.get("result", {})
         at_bat.rbi = result.get("rbi", 0)
         at_bat.is_out = result.get("isOut", False)
+        at_bat.description = result.get("description", "")
 
-        # Determine which team and assign to player line
-        team_scorecard = scorecard.away_team if is_top else scorecard.home_team
-        for player_line in team_scorecard.players:
-            if player_line.number == batter.get("id"):
-                player_line.at_bats[inning] = at_bat
+        # Determine batter's out number
+        if at_bat.is_out:
+            count_info = play.get("count", {})
+            at_bat.out_number = count_info.get("outs")
+
+        # Determine how far the batter reached
+        for r in play.get("runners", []):
+            if r.get("movement", {}).get("originBase") is None:
+                # This is the batter
+                end = r.get("movement", {}).get("end")
+                at_bat.bases_reached = BASE_MAP.get(end, 0)
+                if r.get("movement", {}).get("isOut"):
+                    at_bat.bases_reached = 0
+                    if at_bat.out_number is None:
+                        at_bat.out_number = r.get("movement", {}).get("outNumber")
                 break
 
-    # Update current game state
-    current_play = plays.get("currentPlay", {})
-    if current_play:
-        about = current_play.get("about", {})
-        scorecard.current_inning = about.get("inning", 0)
-        scorecard.is_top_inning = about.get("isTopInning", True)
+        # Parse runner advancements (other runners on base)
+        at_bat.runner_advancements = _parse_runner_advancements(play, at_bat_index)
+
+        # Assign to the correct player line
+        team_sc = scorecard.away_team if is_top else scorecard.home_team
+        for player_line in team_sc.players:
+            if player_line.player_id == batter_id:
+                # Handle multiple at-bats in same inning (use inning * 100 + count)
+                key = (batter_id, inning)
+                count = player_inning_count.get(key, 0)
+                player_inning_count[key] = count + 1
+
+                if count == 0:
+                    player_line.at_bats[inning] = at_bat
+                else:
+                    # Multiple at-bats in same inning (rare, big innings)
+                    player_line.at_bats[inning + count * 100] = at_bat
+                break
+
+    # Calculate inning totals from linescore
+    linescore = live_data.get("linescore", {})
+    innings_data = linescore.get("innings", [])
+    total_innings = len(innings_data)
+    scorecard.total_innings = max(total_innings, 9)
+
+    for inning_data in innings_data:
+        inning_num = inning_data.get("num", 0)
+        for side, team_sc in [("away", scorecard.away_team), ("home", scorecard.home_team)]:
+            side_data = inning_data.get(side, {})
+            team_sc.inning_totals.append(InningTotals(
+                inning=inning_num,
+                runs=side_data.get("runs", 0),
+                hits=side_data.get("hits", 0),
+                errors=side_data.get("errors", 0),
+                left_on_base=side_data.get("leftOnBase", 0),
+            ))
+
+    # Game totals
+    for side, team_sc in [("away", scorecard.away_team), ("home", scorecard.home_team)]:
+        totals = linescore.get("teams", {}).get(side, {})
+        team_sc.total_runs = totals.get("runs", 0)
+        team_sc.total_hits = totals.get("hits", 0)
+        team_sc.total_errors = totals.get("errors", 0)
+
+    # Current game state
+    scorecard.current_inning = linescore.get("currentInning", 0)
+    scorecard.is_top_inning = linescore.get("isTopInning", True)
 
     return scorecard
