@@ -268,14 +268,15 @@ const ScoresheetRenderer = {
                 anchor: 'middle', size: 22, bold: true, fill: ACCENT
             });
         } else if (ab.is_out || ab.result_type === 'out') {
-            // Other outs: notation below diamond
-            this._txt(g, cx, y + CELL_H - 12, notation, {
-                anchor: 'middle', size: 10, bold: true
+            // Other outs: notation centered inside the diamond, bold
+            const outSize = notation.length > 6 ? 9 : notation.length > 4 ? 10 : 12;
+            this._txt(g, cx, cy + 5, notation, {
+                anchor: 'middle', size: outSize, bold: true
             });
         } else if (!REACH_MAP[notation]) {
-            // Non-standard reach notations (FC, E-3, etc.)
-            this._txt(g, cx, y + CELL_H - 12, notation, {
-                anchor: 'middle', size: 10, bold: true
+            // Non-standard reach notations (FC, E-3, etc.) inside diamond
+            this._txt(g, cx, cy + 5, notation, {
+                anchor: 'middle', size: 12, bold: true
             });
         }
 
