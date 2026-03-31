@@ -223,7 +223,7 @@
             return;
         }
 
-        const cols = ['PITCHER', 'IP', 'H', 'R', 'ER', 'BB', 'K', 'HR', 'PC-ST'];
+        const cols = ['PITCHER', 'IP', 'H', 'R', 'ER', 'BB', 'K', 'HR', 'P/S'];
 
         let html = '<h3>Pitching</h3><table><thead><tr>';
         cols.forEach(c => { html += `<th>${c}</th>`; });
