@@ -163,9 +163,29 @@ const ScoresheetRenderer = {
             });
         }
 
-        // Position
-        this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + CELL_H / 2 + 5,
-            player.position || '', { anchor: 'middle', size: 13, bold: true });
+        // Position — split if position_changes exist
+        const posChanges = player.position_changes || [];
+        if (posChanges.length > 0) {
+            const halfH = CELL_H / 2;
+            this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + 22,
+                player.position || '', { anchor: 'middle', size: 10, bold: true });
+            this._seg(g, [NUM_COL_W + NAME_COL_W, y + halfH],
+                [HEADER_W, y + halfH], ACCENT, 1.5);
+            const lastChange = posChanges[posChanges.length - 1];
+            this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + halfH + 18,
+                lastChange.to_pos || '', { anchor: 'middle', size: 10, bold: true, fill: ACCENT });
+
+            // Red vertical line at the inning where the position change happened
+            for (const pc of posChanges) {
+                if (pc.inning >= 1 && pc.inning <= numInn) {
+                    const lx = HEADER_W + (pc.inning - 1) * CELL_W;
+                    this._seg(g, [lx, y + 2], [lx, y + CELL_H - 2], ACCENT, 2.5);
+                }
+            }
+        } else {
+            this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + CELL_H / 2 + 5,
+                player.position || '', { anchor: 'middle', size: 13, bold: true });
+        }
 
         // At-bat cells
         const atBats = player.at_bats || {};
@@ -306,8 +326,8 @@ const ScoresheetRenderer = {
         // ── RBI marks (X's in bottom-left, above pitch boxes) ──
         if (ab.rbi > 0) {
             for (let r = 0; r < Math.min(ab.rbi, 4); r++) {
-                this._txt(g, x + 4 + r * 10, y + 14, '\u2716', {
-                    size: 9, bold: true, fill: HIT_REACHED
+                this._txt(g, x + 4 + r * 10, y + 14, 'X', {
+                    size: 10, bold: true, fill: HIT_REACHED
                 });
             }
         }
@@ -416,17 +436,20 @@ const ScoresheetRenderer = {
     // ─── HIT LINE ─────────────────────────────────────────────
 
     _drawHitLine(g, cx, cy, d, ab) {
+        // Skip HRs — filled diamond is enough
+        if (ab.result === 'HR') return;
+
         const homeX = cx;
         const homeY = cy + d;
-        const hitLen = d * 1.5;
+        const hitLen = d * 2.2;
 
         const fielders = ab.fielders || [];
         const firstFielder = fielders.length > 0 ? fielders[0] : 8;
 
-        // Angle by fielder position (degrees, 0=right, -90=up)
+        // All angles stay INSIDE the baselines (-45° is 1B line, -135° is 3B line)
         const angles = {
-            1: -90, 2: -90, 3: -50, 4: -65,
-            5: -115, 6: -105, 7: -135, 8: -90, 9: -45,
+            1: -90, 2: -90, 3: -55, 4: -70,
+            5: -110, 6: -95, 7: -125, 8: -90, 9: -55,
         };
         const angleDeg = angles[firstFielder] || -90;
         const angleRad = angleDeg * Math.PI / 180;
@@ -434,26 +457,8 @@ const ScoresheetRenderer = {
         const endX = homeX + Math.cos(angleRad) * hitLen;
         const endY = homeY + Math.sin(angleRad) * hitLen;
 
-        const line = this._seg(g, [homeX, homeY], [endX, endY], INK, 1.5);
-
-        // Ground ball = dashed, fly ball = no change, line drive = solid (default)
-        if (ab.hit_type === 'G') {
-            line.setAttribute('stroke-dasharray', '4,3');
-        }
-
-        // For fly balls and popups, add a small arc
-        if (ab.hit_type === 'F' || ab.hit_type === 'P') {
-            // Small curve above the line
-            const midX = (homeX + endX) / 2;
-            const midY = (homeY + endY) / 2 - 6;
-            const arc = document.createElementNS(SVG_NS, 'path');
-            arc.setAttribute('d', `M${homeX},${homeY}Q${midX},${midY},${endX},${endY}`);
-            arc.setAttribute('fill', 'none');
-            arc.setAttribute('stroke', INK);
-            arc.setAttribute('stroke-width', '1.2');
-            g.appendChild(arc);
-            line.setAttribute('stroke', 'none'); // hide straight line, use curve
-        }
+        // All hit lines are solid
+        this._seg(g, [homeX, homeY], [endX, endY], INK, 1.5);
     },
 
     // ─── RUNNER ANNOTATIONS ───────────────────────────────────
@@ -467,59 +472,55 @@ const ScoresheetRenderer = {
             4: [cx, cy + d],       // score = home
         };
 
+        const labelOffset = (segFrom, segTo) => {
+            const mx = (segFrom[0] + segTo[0]) / 2;
+            const my = (segFrom[1] + segTo[1]) / 2;
+            const ddx = mx - cx, ddy = my - cy;
+            const len = Math.sqrt(ddx * ddx + ddy * ddy) || 1;
+            return [mx + (ddx / len) * 10, my + (ddy / len) * 8];
+        };
+
         for (const adv of advancements) {
             const from = adv.from_base || 0;
             const to = adv.is_out ? Math.min(from + 1, 4) : (adv.to_base || 0);
-            const fromPt = baseCoords[from] || baseCoords[0];
-            const toPt = baseCoords[to] || baseCoords[from] || baseCoords[0];
 
-            if (from !== to || adv.is_out) {
-                if (adv.is_out) {
-                    // Runner was out: slash line across the base path
-                    // Draw the base path as dashed red up to where they were out
-                    const pathLine = this._seg(g, fromPt, toPt, ACCENT, 1.5);
-                    pathLine.setAttribute('stroke-dasharray', '3,2');
-
-                    // Slash perpendicular to the base path at the midpoint
-                    const midX = (fromPt[0] + toPt[0]) / 2;
-                    const midY = (fromPt[1] + toPt[1]) / 2;
-                    // Perpendicular direction
-                    const dx = toPt[0] - fromPt[0];
-                    const dy = toPt[1] - fromPt[1];
-                    const len = Math.sqrt(dx * dx + dy * dy) || 1;
-                    const perpX = -dy / len * 6;
-                    const perpY = dx / len * 6;
-                    this._seg(g,
-                        [midX - perpX, midY - perpY],
-                        [midX + perpX, midY + perpY],
-                        ACCENT, 2);
-                }
-                // Successful advances by other runners are NOT drawn as bold lines
-                // here — the lineup number label is enough. The bold black lines
-                // on the runner's OWN at-bat cell show their progress.
-            }
-
-            // Label along the path
             let label = adv.method || '';
-            if (!label) continue;
-
-            // Midpoint of the segment
-            let tx = (fromPt[0] + toPt[0]) / 2;
-            let ty = (fromPt[1] + toPt[1]) / 2;
-
-            // Offset away from the diamond so text doesn't overlap the line
-            if (tx > cx) tx += 10;
-            else if (tx < cx) tx -= 10;
-            else tx += 12; // top/bottom segments — push right
-
-            if (ty > cy) ty += 6;
-            else if (ty < cy) ty -= 5;
-
+            if (!label || from === to) continue;
             if (label.length > 8) label = label.substring(0, 8);
 
-            this._txt(g, tx, ty, label, {
-                anchor: 'middle', size: 7, fill: '#2266aa', bold: true,
-            });
+            if (adv.is_out) {
+                const fromPt = baseCoords[from] || baseCoords[0];
+                const toPt = baseCoords[to] || baseCoords[0];
+                const pathLine = this._seg(g, fromPt, toPt, ACCENT, 1.5);
+                pathLine.setAttribute('stroke-dasharray', '3,2');
+
+                const midX = (fromPt[0] + toPt[0]) / 2;
+                const midY = (fromPt[1] + toPt[1]) / 2;
+                const dx = toPt[0] - fromPt[0];
+                const dy = toPt[1] - fromPt[1];
+                const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                const perpX = -dy / len * 6;
+                const perpY = dx / len * 6;
+                this._seg(g,
+                    [midX - perpX, midY - perpY],
+                    [midX + perpX, midY + perpY],
+                    ACCENT, 2);
+
+                const [lx, ly] = labelOffset(fromPt, toPt);
+                this._txt(g, lx, ly, label, {
+                    anchor: 'middle', size: 7, fill: ACCENT, bold: true,
+                });
+            } else {
+                // Place label on the LAST segment of the runner's path
+                const lastFrom = Math.max(from, (to >= 4 ? 3 : to - 1));
+                const lastTo = to >= 4 ? 4 : to;
+                const segA = baseCoords[lastFrom] || baseCoords[0];
+                const segB = baseCoords[lastTo] || baseCoords[0];
+                const [lx, ly] = labelOffset(segA, segB);
+                this._txt(g, lx, ly, label, {
+                    anchor: 'middle', size: 7, fill: '#2266aa', bold: true,
+                });
+            }
         }
     },
 

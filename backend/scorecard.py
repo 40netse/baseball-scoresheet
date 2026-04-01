@@ -2,7 +2,7 @@
 
 from models import (
     AtBat, BaseAdvancement, GameScorecard, InningTotals,
-    Pitch, PitcherLine, PlayerLine, TeamScorecard, BASE_MAP,
+    Pitch, PitcherLine, PlayerLine, PositionChange, TeamScorecard, BASE_MAP,
 )
 
 # MLB API position abbreviations to position numbers
@@ -320,7 +320,10 @@ def _parse_runner_advancements(play_data: dict, batter_lineup_num: int) -> list[
         elif is_out and "force_out" in reason:
             fo_chain = _get_fielder_chain(r.get("credits", []))
             fo_str = "-".join(str(f) for f in fo_chain)
-            method = fo_str if fo_str else "FO"
+            if len(fo_chain) == 1:
+                method = f"{fo_str}U"  # unassisted putout
+            else:
+                method = fo_str if fo_str else "FO"
         elif "wild_pitch" in reason:
             method = "WP"
         elif "passed_ball" in reason:
@@ -542,6 +545,52 @@ def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
                     # Multiple at-bats in same inning (rare, big innings)
                     player_line.at_bats[inning + count * 100] = at_bat
                 break
+
+    # Parse defensive switches and set starting positions
+    player_lookup = {}
+    for side_team in [scorecard.away_team, scorecard.home_team]:
+        for pl in side_team.players:
+            player_lookup[pl.player_id] = pl
+
+    for play in all_plays:
+        about = play.get("about", {})
+        inning = about.get("inning", 0)
+        is_top = about.get("isTopInning", True)
+
+        for event in play.get("playEvents", []):
+            if event.get("type") != "action":
+                continue
+            details = event.get("details", {})
+            event_type = details.get("eventType", "")
+            desc = details.get("description", "")
+
+            if event_type == "defensive_switch":
+                player_data = event.get("player", {})
+                pid = player_data.get("id") if player_data else None
+
+                import re
+                m = re.search(r'from\s+(.+?)\s+to\s+(.+?)\s+for\s+', desc, re.IGNORECASE)
+                if m and pid and pid in player_lookup:
+                    from_pos_full = m.group(1).strip().rstrip('.')
+                    to_pos_full = m.group(2).strip().rstrip('.')
+                    pos_abbrev = {
+                        'pitcher': 'P', 'catcher': 'C', 'first base': '1B',
+                        'second base': '2B', 'third base': '3B', 'shortstop': 'SS',
+                        'left field': 'LF', 'center field': 'CF', 'right field': 'RF',
+                        'designated hitter': 'DH',
+                    }
+                    from_pos = pos_abbrev.get(from_pos_full.lower(), from_pos_full)
+                    to_pos = pos_abbrev.get(to_pos_full.lower(), to_pos_full)
+
+                    pl = player_lookup[pid]
+                    if not pl.position_changes:
+                        pl.position = from_pos
+                    pl.position_changes.append(PositionChange(
+                        from_pos=from_pos,
+                        to_pos=to_pos,
+                        inning=inning,
+                        is_top=is_top,
+                    ))
 
     # Calculate inning totals from linescore
     linescore = live_data.get("linescore", {})

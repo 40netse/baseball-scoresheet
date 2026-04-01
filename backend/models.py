@@ -39,6 +39,15 @@ class BaseAdvancement:
 
 
 @dataclass
+class PositionChange:
+    """A mid-game position change for a player."""
+    from_pos: str = ""
+    to_pos: str = ""
+    inning: int = 0
+    is_top: bool = True
+
+
+@dataclass
 class AtBat:
     """A single plate appearance."""
     batter_name: str = ""
@@ -70,6 +79,7 @@ class PlayerLine:
     batting_order: int = 0
     batting_order_seq: int = 0  # 0=starter, 1=first sub, etc.
     at_bats: dict = field(default_factory=dict)  # keyed by inning number (str for JSON)
+    position_changes: list = field(default_factory=list)  # list of PositionChange
 
     def to_dict(self):
         d = {
@@ -80,6 +90,7 @@ class PlayerLine:
             "batting_order": self.batting_order,
             "batting_order_seq": self.batting_order_seq,
             "at_bats": {str(k): v.to_dict() for k, v in self.at_bats.items()},
+            "position_changes": [asdict(pc) for pc in self.position_changes],
         }
         return d
 
