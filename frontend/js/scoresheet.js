@@ -323,6 +323,29 @@ const ScoresheetRenderer = {
             }
         }
 
+        // ── Out number from runner advancement (CS/pickoff on this runner's cell) ──
+        if (!ab.is_out && ab.runner_advancements) {
+            for (const adv of ab.runner_advancements) {
+                if (adv.is_out && adv.out_number) {
+                    const ox = x + diamondAreaW - 8;
+                    const oy = y + 12;
+                    this._circle(g, ox, oy, 8, 'none', ACCENT, 1.8);
+                    this._txt(g, ox, oy + 4, String(adv.out_number), {
+                        anchor: 'middle', size: 12, bold: true, fill: ACCENT
+                    });
+                    if (adv.out_number === 3) {
+                        const arrowY = y + CELL_H - 2;
+                        this._seg(g, [x + 4, arrowY], [x + diamondAreaW - 4, arrowY], ACCENT, 2.5);
+                        const ax = x + diamondAreaW - 4;
+                        this._path(g,
+                            `M${ax},${arrowY}L${ax - 6},${arrowY - 4}L${ax - 6},${arrowY + 4}Z`,
+                            ACCENT, ACCENT, 0);
+                    }
+                    break; // only one out per cell
+                }
+            }
+        }
+
         // ── RBI marks (X's in bottom-left, above pitch boxes) ──
         if (ab.rbi > 0) {
             for (let r = 0; r < Math.min(ab.rbi, 4); r++) {

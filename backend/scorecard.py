@@ -531,6 +531,18 @@ def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
                 elif runner_id == batter_id:
                     at_bat.bases_reached = 4
 
+        # Skip assigning at-bat for plays where the batter isn't involved
+        # (caught stealing, pickoff — the out belongs on the runner's cell)
+        event_type = play.get("result", {}).get("eventType", "")
+        is_runner_only_play = event_type in (
+            "caught_stealing_2b", "caught_stealing_3b", "caught_stealing_home",
+            "pickoff_1b", "pickoff_2b", "pickoff_3b",
+            "pickoff_caught_stealing_2b", "pickoff_caught_stealing_3b",
+            "pickoff_caught_stealing_home",
+        )
+        if is_runner_only_play:
+            continue
+
         # Assign to the correct player line
         for player_line in team_sc.players:
             if player_line.player_id == batter_id:
