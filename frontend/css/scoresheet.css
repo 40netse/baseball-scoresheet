@@ -208,13 +208,28 @@ header h1 {
     letter-spacing: 0.5px;
 }
 
+/* Game layout: pitcher box | scoresheet | pitcher box */
+#game-layout {
+    display: flex;
+    gap: 12px;
+    max-width: 1800px;
+    margin: 0 auto;
+    align-items: flex-start;
+}
+
+.pitcher-box-side {
+    flex: 0 0 200px;
+    min-width: 180px;
+    max-width: 220px;
+    position: sticky;
+    top: 10px;
+}
+
 /* Scoresheet container */
 #scoresheet-container {
-    display: flex;
-    flex-direction: column;
-    gap: 36px;
-    max-width: 1400px;
-    margin: 0 auto;
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
 }
 
 .team-sheet {
@@ -296,9 +311,11 @@ header h1 {
 
 /* Pitcher Box */
 .pitcher-box {
-    margin-top: 16px;
-    border-top: 2px solid #3a3530;
-    padding-top: 10px;
+    background: #fcf9f3;
+    border: 2px solid #3a3530;
+    border-radius: 2px;
+    padding: 10px 8px;
+    box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
 }
 
 .pitcher-box h3 {
@@ -312,37 +329,38 @@ header h1 {
 
 .pitcher-box table {
     width: 100%;
-    max-width: 800px;
     border-collapse: collapse;
     font-family: 'Courier New', monospace;
-    font-size: 13px;
+    font-size: 11px;
 }
 
 .pitcher-box th {
     background: #3a3530;
     color: #f5f0e8;
-    padding: 5px 8px;
+    padding: 3px 4px;
     text-align: center;
-    font-size: 11px;
+    font-size: 9px;
     font-weight: bold;
-    letter-spacing: 1px;
+    letter-spacing: 0.5px;
     white-space: nowrap;
 }
 
 .pitcher-box th:first-child {
     text-align: left;
-    min-width: 170px;
 }
 
 .pitcher-box td {
-    padding: 5px 8px;
+    padding: 3px 4px;
     text-align: center;
     border-bottom: 1px solid #d5cfc5;
+    font-size: 11px;
 }
 
 .pitcher-box td:first-child {
     text-align: left;
     font-weight: normal;
+    font-size: 10px;
+    white-space: nowrap;
 }
 
 .pitcher-box tr:last-child td {
@@ -352,11 +370,29 @@ header h1 {
 .pitcher-box .decision {
     display: inline-block;
     font-weight: bold;
-    font-size: 11px;
-    margin-left: 6px;
-    padding: 1px 5px;
+    font-size: 9px;
+    margin-left: 3px;
+    padding: 1px 3px;
     border-radius: 2px;
     letter-spacing: 0.5px;
+}
+
+/* Responsive: stack pitcher boxes below on narrow screens */
+@media (max-width: 1100px) {
+    #game-layout {
+        flex-direction: column;
+    }
+
+    .pitcher-box-side {
+        flex: none;
+        max-width: 100%;
+        min-width: 0;
+        position: static;
+    }
+
+    #game-layout {
+        gap: 16px;
+    }
 }
 
 .pitcher-box .decision-W {

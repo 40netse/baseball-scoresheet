@@ -182,6 +182,7 @@
         // Show sections
         gameInfoEl.style.display = '';
         linescoreContainer.style.display = '';
+        document.getElementById('game-layout').style.display = '';
 
         // Game info — team names are clickable toggles
         const awayAbbr = away.team_abbreviation || away.team_name || 'Away';
@@ -223,9 +224,11 @@
         ScoresheetRenderer.render(homeSvg, home, totalInnings,
             isLiveUpdate ? changedCells.home : null);
 
-        // Pitcher boxes
-        renderPitcherBox(document.getElementById('away-pitchers'), away);
-        renderPitcherBox(document.getElementById('home-pitchers'), home);
+        // Pitcher boxes (left = away/visitor, right = home)
+        renderPitcherBox(document.getElementById('away-pitchers'), away,
+            away.team_abbreviation || 'Away');
+        renderPitcherBox(document.getElementById('home-pitchers'), home,
+            home.team_abbreviation || 'Home');
 
         // Linescore
         const linescoreChanged = isLiveUpdate && [...changed].some(k => k.includes('linescore') || k.includes('totals'));
@@ -252,7 +255,7 @@
 
     // ─── Pitcher Box ────────────────────────────────────────
 
-    function renderPitcherBox(container, teamData) {
+    function renderPitcherBox(container, teamData, teamLabel) {
         const pitchers = teamData.pitchers || [];
         if (pitchers.length === 0) {
             container.innerHTML = '';
@@ -261,7 +264,7 @@
 
         const cols = ['PITCHER', 'IP', 'H', 'R', 'ER', 'BB', 'K', 'HR', 'P/S'];
 
-        let html = '<h3>Pitching</h3><table><thead><tr>';
+        let html = `<h3>${teamLabel} Pitching</h3><table><thead><tr>`;
         cols.forEach(c => { html += `<th>${c}</th>`; });
         html += '</tr></thead><tbody>';
 
