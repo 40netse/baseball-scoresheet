@@ -490,16 +490,14 @@ body {
 
 /* ─── Print Stylesheet ────────────────────────────────── */
 
+/* Print layout uses a separate structure built by JS.
+   Hide everything except .print-page elements. */
 @media print {
-    /* Hide UI controls */
-    #header-bar,
-    #back-btn,
-    #print-btn,
-    #update-flash {
-        display: none !important;
+    @page {
+        size: landscape;
+        margin: 0.3in;
     }
 
-    /* Reset page */
     body {
         background: #fff !important;
         background-image: none !important;
@@ -508,94 +506,111 @@ body {
         color: #000 !important;
     }
 
-    /* Game bar: print-friendly */
-    #game-top-bar {
-        background: none !important;
-        color: #000 !important;
-        border-bottom: 2px solid #000;
-        padding: 8px 0 !important;
-        margin-bottom: 8px !important;
-        border-radius: 0 !important;
-        max-width: none !important;
-    }
-
-    #game-top-bar #venue {
-        color: #333 !important;
-    }
-
-    #game-info #away-team,
-    #game-info #home-team {
-        color: #000 !important;
-        opacity: 1 !important;
-    }
-
-    #game-info .team-inactive {
-        opacity: 1 !important;
-    }
-
-    #game-info #game-status {
-        color: #000 !important;
-        opacity: 1 !important;
-        border-left-color: #000 !important;
-    }
-
-    #game-info .auto-indicator {
+    /* Hide all normal UI */
+    #header-bar,
+    #game-view {
         display: none !important;
     }
 
-    /* Linescore */
-    #linescore-container {
-        margin: 4px auto 8px !important;
-        max-width: none !important;
-    }
-
-    #linescore {
-        box-shadow: none !important;
-    }
-
-    /* Pitcher row */
-    #pitcher-row {
-        margin: 4px auto 8px !important;
-        max-width: none !important;
-    }
-
-    .pitcher-box {
-        box-shadow: none !important;
-        border-color: #000 !important;
-    }
-
-    /* Show BOTH team sheets for printing (one per page) */
-    #away-sheet,
-    #home-sheet {
+    /* Show print pages */
+    .print-page {
         display: block !important;
-        box-shadow: none !important;
-        border-color: #000 !important;
-        page-break-before: always;
+        page-break-after: always;
         page-break-inside: avoid;
     }
 
-    /* First team sheet doesn't need a page break before it */
-    #away-sheet {
-        page-break-before: auto;
+    .print-page:last-child {
+        page-break-after: auto;
     }
 
-    #scoresheet-container {
-        max-width: none !important;
+    /* Print linescore */
+    .print-page .print-linescore {
+        margin: 0 auto 8px;
     }
 
-    .team-sheet {
+    .print-page .print-linescore table {
+        width: auto;
+        margin: 0 auto;
+        border-collapse: collapse;
+        font-family: 'Courier New', monospace;
+        font-size: 13px;
+    }
+
+    .print-page .print-linescore th,
+    .print-page .print-linescore td {
+        border: 1px solid #000;
+        padding: 4px 8px;
+        text-align: center;
+        min-width: 28px;
+    }
+
+    .print-page .print-linescore th {
+        background: #ddd !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        font-weight: bold;
+        font-size: 11px;
+    }
+
+    .print-page .print-linescore td:first-child {
+        text-align: left;
+        font-weight: bold;
+        min-width: 60px;
+    }
+
+    /* Print team sheet */
+    .print-page .team-sheet {
         box-shadow: none !important;
-        border-color: #000 !important;
+        border: 2px solid #000 !important;
+        padding: 8px !important;
+        margin-bottom: 8px;
     }
 
-    .team-sheet h2 {
+    .print-page .team-sheet h2 {
         border-bottom-color: #000 !important;
         color: #000 !important;
+        margin-bottom: 6px;
+        padding-bottom: 4px;
     }
 
-    /* Landscape hint */
-    @page {
-        size: landscape;
-        margin: 0.4in;
+    /* Print pitcher box */
+    .print-page .pitcher-box {
+        box-shadow: none !important;
+        border: 2px solid #000 !important;
+        margin-top: 6px;
+        padding: 6px 8px;
     }
+
+    .print-page .pitcher-box h3 {
+        color: #000 !important;
+        font-size: 11px;
+        margin-bottom: 4px;
+    }
+
+    .print-page .pitcher-box table {
+        font-size: 11px;
+    }
+
+    .print-page .pitcher-box th {
+        background: #ddd !important;
+        color: #000 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    .print-page .pitcher-box .decision {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    .print-page .pitcher-box .totals-row td {
+        background: #eee !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+}
+
+/* Hidden in screen, shown in print */
+.print-page {
+    display: none;
 }

@@ -46,13 +46,14 @@
 
     backBtn.addEventListener('click', showSelectorView);
 
+    let lastScorecard = null;
+
     document.getElementById('print-btn').addEventListener('click', () => {
-        // Show both team sheets for printing (one per page)
-        awaySheetEl.style.display = '';
-        homeSheetEl.style.display = '';
+        if (!lastScorecard) return;
+        buildPrintPages(lastScorecard);
         window.print();
-        // Restore single-team view after print dialog closes
-        showTeam(activeTeam);
+        // Clean up print pages after dialog closes
+        document.querySelectorAll('.print-page').forEach(el => el.remove());
     });
 
     // ─── Team Toggle (click team names in game bar) ───────────
@@ -188,6 +189,7 @@
     // ─── Render ───────────────────────────────────────────────
 
     function renderScorecard(sc, isLiveUpdate) {
+        lastScorecard = sc;
         const away = sc.away_team || {};
         const home = sc.home_team || {};
         const totalInnings = sc.total_innings || 9;
@@ -372,5 +374,110 @@
 
             linescoreBody.appendChild(tr);
         }
+    }
+
+    // ─── Print Pages ──────────────────────────────────────────
+
+    function buildLinescoreHTML(sc) {
+        const away = sc.away_team || {};
+        const home = sc.home_team || {};
+        const totalInnings = sc.total_innings || 9;
+
+        let html = '<div class="print-linescore"><table><thead><tr><th></th>';
+        for (let i = 1; i <= totalInnings; i++) html += `<th>${i}</th>`;
+        html += '<th>R</th><th>H</th><th>E</th></tr></thead><tbody>';
+
+        for (const data of [away, home]) {
+            html += `<tr><td>${data.team_abbreviation || ''}</td>`;
+            const innMap = {};
+            (data.inning_totals || []).forEach(it => { innMap[it.inning] = it; });
+            for (let i = 1; i <= totalInnings; i++) {
+                html += `<td>${innMap[i] ? innMap[i].runs : ''}</td>`;
+            }
+            html += `<td><b>${data.total_runs || 0}</b></td>`;
+            html += `<td><b>${data.total_hits || 0}</b></td>`;
+            html += `<td><b>${data.total_errors || 0}</b></td></tr>`;
+        }
+        html += '</tbody></table></div>';
+        return html;
+    }
+
+    function buildPitcherHTML(teamData, teamLabel) {
+        const pitchers = teamData.pitchers || [];
+        if (!pitchers.length) return '';
+
+        const cols = ['PITCHER', 'IP', 'H', 'R', 'ER', 'BB', 'K', 'HR', 'P/S'];
+        let html = `<div class="pitcher-box"><h3>${teamLabel} Pitching</h3><table><thead><tr>`;
+        cols.forEach(c => { html += `<th>${c}</th>`; });
+        html += '</tr></thead><tbody>';
+
+        let totIP = 0, totH = 0, totR = 0, totER = 0, totBB = 0, totK = 0, totHR = 0, totPC = 0, totST = 0;
+
+        pitchers.forEach(p => {
+            const dec = p.decision ? `<span class="decision decision-${p.decision}">${p.decision}</span>` : '';
+            html += `<tr><td>#${p.jersey_number || '?'} ${p.name}${dec}</td>`;
+            html += `<td>${p.ip}</td><td>${p.hits}</td><td>${p.runs}</td><td>${p.earned_runs}</td>`;
+            html += `<td>${p.walks}</td><td>${p.strikeouts}</td><td>${p.home_runs}</td>`;
+            html += `<td><span class="pitch-count">${p.pitches}-${p.strikes}</span></td></tr>`;
+
+            const ipParts = String(p.ip).split('.');
+            totIP += parseInt(ipParts[0] || '0') * 3 + parseInt(ipParts[1] || '0');
+            totH += p.hits || 0; totR += p.runs || 0; totER += p.earned_runs || 0;
+            totBB += p.walks || 0; totK += p.strikeouts || 0; totHR += p.home_runs || 0;
+            totPC += p.pitches || 0; totST += p.strikes || 0;
+        });
+
+        html += `<tr class="totals-row"><td>TOTALS</td>`;
+        html += `<td>${Math.floor(totIP / 3)}.${totIP % 3}</td>`;
+        html += `<td>${totH}</td><td>${totR}</td><td>${totER}</td>`;
+        html += `<td>${totBB}</td><td>${totK}</td><td>${totHR}</td>`;
+        html += `<td><span class="pitch-count">${totPC}-${totST}</span></td>`;
+        html += '</tr></tbody></table></div>';
+        return html;
+    }
+
+    function buildPrintPage(sc, teamData, teamLabel, isVisitor) {
+        const totalInnings = sc.total_innings || 9;
+
+        const page = document.createElement('div');
+        page.className = 'print-page';
+
+        // Linescore
+        const lsDiv = document.createElement('div');
+        lsDiv.innerHTML = buildLinescoreHTML(sc);
+        page.appendChild(lsDiv.firstChild);
+
+        // Team scoresheet
+        const sheet = document.createElement('div');
+        sheet.className = 'team-sheet';
+        const h2 = document.createElement('h2');
+        h2.textContent = teamData.team_name + (isVisitor ? ' (Visiting)' : '');
+        sheet.appendChild(h2);
+
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.classList.add('scorecard-svg');
+        sheet.appendChild(svg);
+        page.appendChild(sheet);
+
+        // Pitcher box
+        const pitcherDiv = document.createElement('div');
+        pitcherDiv.innerHTML = buildPitcherHTML(teamData, teamLabel);
+        if (pitcherDiv.firstChild) page.appendChild(pitcherDiv.firstChild);
+
+        // Append to body and render SVG
+        document.body.appendChild(page);
+        ScoresheetRenderer.render(svg, teamData, totalInnings);
+
+        return page;
+    }
+
+    function buildPrintPages(sc) {
+        document.querySelectorAll('.print-page').forEach(el => el.remove());
+
+        const away = sc.away_team || {};
+        const home = sc.home_team || {};
+
+        buildPrintPage(sc, away, away.team_abbreviation || 'Away', true);
+        buildPrintPage(sc, home, home.team_abbreviation || 'Home', false);
     }
 })();
