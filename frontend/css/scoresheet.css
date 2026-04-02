@@ -126,6 +126,28 @@ body {
     background: rgba(255,255,255,0.25);
 }
 
+#print-btn {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: bold;
+    padding: 4px 12px;
+    cursor: pointer;
+    background: rgba(255,255,255,0.12);
+    color: #f5f0e8;
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+#print-btn:hover {
+    background: rgba(255,255,255,0.25);
+}
+
 #game-info {
     display: inline;
 }
@@ -457,5 +479,123 @@ body {
 
     #game-top-bar {
         text-align: center;
+    }
+
+    #print-btn {
+        position: static;
+        transform: none;
+        margin-bottom: 8px;
+    }
+}
+
+/* ─── Print Stylesheet ────────────────────────────────── */
+
+@media print {
+    /* Hide UI controls */
+    #header-bar,
+    #back-btn,
+    #print-btn,
+    #update-flash {
+        display: none !important;
+    }
+
+    /* Reset page */
+    body {
+        background: #fff !important;
+        background-image: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        color: #000 !important;
+    }
+
+    /* Game bar: print-friendly */
+    #game-top-bar {
+        background: none !important;
+        color: #000 !important;
+        border-bottom: 2px solid #000;
+        padding: 8px 0 !important;
+        margin-bottom: 8px !important;
+        border-radius: 0 !important;
+        max-width: none !important;
+    }
+
+    #game-top-bar #venue {
+        color: #333 !important;
+    }
+
+    #game-info #away-team,
+    #game-info #home-team {
+        color: #000 !important;
+        opacity: 1 !important;
+    }
+
+    #game-info .team-inactive {
+        opacity: 1 !important;
+    }
+
+    #game-info #game-status {
+        color: #000 !important;
+        opacity: 1 !important;
+        border-left-color: #000 !important;
+    }
+
+    #game-info .auto-indicator {
+        display: none !important;
+    }
+
+    /* Linescore */
+    #linescore-container {
+        margin: 4px auto 8px !important;
+        max-width: none !important;
+    }
+
+    #linescore {
+        box-shadow: none !important;
+    }
+
+    /* Pitcher row */
+    #pitcher-row {
+        margin: 4px auto 8px !important;
+        max-width: none !important;
+    }
+
+    .pitcher-box {
+        box-shadow: none !important;
+        border-color: #000 !important;
+    }
+
+    /* Show BOTH team sheets for printing (one per page) */
+    #away-sheet,
+    #home-sheet {
+        display: block !important;
+        box-shadow: none !important;
+        border-color: #000 !important;
+        page-break-before: always;
+        page-break-inside: avoid;
+    }
+
+    /* First team sheet doesn't need a page break before it */
+    #away-sheet {
+        page-break-before: auto;
+    }
+
+    #scoresheet-container {
+        max-width: none !important;
+    }
+
+    .team-sheet {
+        box-shadow: none !important;
+        border-color: #000 !important;
+    }
+
+    .team-sheet h2 {
+        border-bottom-color: #000 !important;
+        color: #000 !important;
+    }
+
+    /* Landscape hint */
+    @page {
+        size: landscape;
+        margin: 0.4in;
     }
 }

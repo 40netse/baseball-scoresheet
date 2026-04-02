@@ -46,6 +46,15 @@
 
     backBtn.addEventListener('click', showSelectorView);
 
+    document.getElementById('print-btn').addEventListener('click', () => {
+        // Show both team sheets for printing (one per page)
+        awaySheetEl.style.display = '';
+        homeSheetEl.style.display = '';
+        window.print();
+        // Restore single-team view after print dialog closes
+        showTeam(activeTeam);
+    });
+
     // ─── Team Toggle (click team names in game bar) ───────────
 
     function showTeam(side) {
