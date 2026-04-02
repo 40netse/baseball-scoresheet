@@ -12,9 +12,6 @@
     const homeTeamEl = document.getElementById('home-team');
     const gameStatusEl = document.getElementById('game-status');
     const venueEl = document.getElementById('venue');
-    const teamToggle = document.getElementById('team-toggle');
-    const toggleAwayBtn = document.getElementById('toggle-away');
-    const toggleHomeBtn = document.getElementById('toggle-home');
     const awaySheetEl = document.getElementById('away-sheet');
     const homeSheetEl = document.getElementById('home-sheet');
     const awayTeamNameEl = document.getElementById('away-team-name');
@@ -27,35 +24,39 @@
 
     let currentWs = null;
     let previousScorecard = null;
-    let activeTeam = 'away';    // which team sheet is visible
-    let autoSwitch = true;      // auto-switch to batting team during live games
+    let activeTeam = 'away';
+    let autoSwitch = true;
 
     // Default to today
     dateInput.value = new Date().toISOString().split('T')[0];
 
-    // ─── Team Toggle ──────────────────────────────────────────
+    // ─── Team Toggle (via game info bar team names) ───────────
 
     function showTeam(side) {
         activeTeam = side;
         if (side === 'away') {
             awaySheetEl.style.display = '';
             homeSheetEl.style.display = 'none';
-            toggleAwayBtn.classList.add('active');
-            toggleHomeBtn.classList.remove('active');
+            awayTeamEl.classList.add('team-active');
+            awayTeamEl.classList.remove('team-inactive');
+            homeTeamEl.classList.remove('team-active');
+            homeTeamEl.classList.add('team-inactive');
         } else {
             awaySheetEl.style.display = 'none';
             homeSheetEl.style.display = '';
-            toggleAwayBtn.classList.remove('active');
-            toggleHomeBtn.classList.add('active');
+            homeTeamEl.classList.add('team-active');
+            homeTeamEl.classList.remove('team-inactive');
+            awayTeamEl.classList.remove('team-active');
+            awayTeamEl.classList.add('team-inactive');
         }
     }
 
-    toggleAwayBtn.addEventListener('click', () => {
-        autoSwitch = false; // user manually toggled, stop auto-switching
+    awayTeamEl.addEventListener('click', () => {
+        autoSwitch = false;
         showTeam('away');
     });
 
-    toggleHomeBtn.addEventListener('click', () => {
+    homeTeamEl.addEventListener('click', () => {
         autoSwitch = false;
         showTeam('home');
     });
@@ -104,7 +105,7 @@
 
         if (currentWs) { currentWs.close(); currentWs = null; }
         previousScorecard = null;
-        autoSwitch = true;  // reset auto-switch on new game
+        autoSwitch = true;
 
         loadScorecardBtn.textContent = 'Loading...';
         loadScorecardBtn.disabled = true;
@@ -180,12 +181,11 @@
 
         // Show sections
         gameInfoEl.style.display = '';
-        teamToggle.style.display = '';
         linescoreContainer.style.display = '';
 
-        // Game info
-        awayTeamEl.textContent = away.team_abbreviation || away.team_name || 'Away';
-        homeTeamEl.textContent = home.team_abbreviation || home.team_name || 'Home';
+        // Game info — team names are clickable toggles
+        const awayAbbr = away.team_abbreviation || away.team_name || 'Away';
+        const homeAbbr = home.team_abbreviation || home.team_name || 'Home';
 
         const isLive = sc.game_status === 'In Progress';
         const statusText = isLive
@@ -196,31 +196,28 @@
 
         venueEl.textContent = `${sc.game_date || ''} \u2014 ${sc.venue || ''}`;
 
-        // Toggle button labels with team names
-        const awayAbbr = away.team_abbreviation || 'Away';
-        const homeAbbr = home.team_abbreviation || 'Home';
-        toggleAwayBtn.innerHTML = awayAbbr;
-        toggleHomeBtn.innerHTML = homeAbbr;
-
         // Auto-switch to batting team during live games
         if (isLive && autoSwitch) {
             const battingTeam = sc.is_top_inning ? 'away' : 'home';
             showTeam(battingTeam);
-            // Add green dot to the active (batting) button
-            const activeBtn = battingTeam === 'away' ? toggleAwayBtn : toggleHomeBtn;
-            activeBtn.innerHTML += '<span class="auto-indicator"></span>';
-        } else if (!isLive && isLiveUpdate) {
-            // Game just ended — keep current view
         } else if (!isLiveUpdate) {
-            // Initial load — show away (top of first)
             showTeam('away');
         }
+
+        // Update team name text + auto indicator
+        awayTeamEl.innerHTML = awayAbbr +
+            (isLive && autoSwitch && sc.is_top_inning ? '<span class="auto-indicator"></span>' : '');
+        homeTeamEl.innerHTML = homeAbbr +
+            (isLive && autoSwitch && !sc.is_top_inning ? '<span class="auto-indicator"></span>' : '');
+
+        // Re-apply active/inactive classes after innerHTML change
+        showTeam(activeTeam);
 
         // Team headers
         awayTeamNameEl.textContent = `${away.team_name || 'Away'} (Visiting)`;
         homeTeamNameEl.textContent = `${home.team_name || 'Home'}`;
 
-        // Render BOTH scorecards (so they're ready when toggled)
+        // Render both scorecards
         ScoresheetRenderer.render(awaySvg, away, totalInnings,
             isLiveUpdate ? changedCells.away : null);
         ScoresheetRenderer.render(homeSvg, home, totalInnings,

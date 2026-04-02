@@ -89,62 +89,6 @@ header h1 {
     cursor: not-allowed;
 }
 
-/* Team toggle */
-#team-toggle {
-    display: flex;
-    justify-content: center;
-    gap: 0;
-    margin-bottom: 16px;
-    max-width: 1400px;
-    margin-left: auto;
-    margin-right: auto;
-}
-
-.team-toggle-btn {
-    font-family: 'Special Elite', 'Courier New', monospace;
-    font-size: 15px;
-    font-weight: bold;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    padding: 10px 32px;
-    border: 2px solid #3a3530;
-    background: #e8e0d0;
-    color: #3a3530;
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-}
-
-.team-toggle-btn:first-child {
-    border-radius: 4px 0 0 4px;
-    border-right: 1px solid #3a3530;
-}
-
-.team-toggle-btn:last-child {
-    border-radius: 0 4px 4px 0;
-    border-left: 1px solid #3a3530;
-}
-
-.team-toggle-btn.active {
-    background: #3a3530;
-    color: #f5f0e8;
-}
-
-.team-toggle-btn:hover:not(.active) {
-    background: #d5cfc5;
-}
-
-/* Auto-switch indicator */
-.team-toggle-btn .auto-indicator {
-    display: inline-block;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #5f5;
-    margin-left: 6px;
-    vertical-align: middle;
-    animation: live-blink 2s ease-in-out infinite;
-}
-
 /* Game info bar */
 #game-info {
     text-align: center;
@@ -171,6 +115,40 @@ header h1 {
     font-weight: bold;
     font-size: 18px;
     letter-spacing: 2px;
+    cursor: pointer;
+    padding: 4px 12px;
+    border-radius: 3px;
+    transition: background 0.15s, opacity 0.15s;
+}
+
+#game-info #away-team:hover,
+#game-info #home-team:hover {
+    background: rgba(255,255,255,0.15);
+}
+
+#game-info .team-active {
+    background: rgba(255,255,255,0.2);
+    text-decoration: underline;
+    text-underline-offset: 4px;
+}
+
+#game-info .team-inactive {
+    opacity: 0.5;
+}
+
+#game-info .team-inactive:hover {
+    opacity: 0.8;
+}
+
+#game-info .auto-indicator {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #5f5;
+    margin-left: 4px;
+    vertical-align: middle;
+    animation: live-blink 2s ease-in-out infinite;
 }
 
 #game-info #game-status {
