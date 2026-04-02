@@ -12,6 +12,9 @@
     const homeTeamEl = document.getElementById('home-team');
     const gameStatusEl = document.getElementById('game-status');
     const venueEl = document.getElementById('venue');
+    const teamToggle = document.getElementById('team-toggle');
+    const toggleAwayBtn = document.getElementById('toggle-away');
+    const toggleHomeBtn = document.getElementById('toggle-home');
     const awaySheetEl = document.getElementById('away-sheet');
     const homeSheetEl = document.getElementById('home-sheet');
     const awayTeamNameEl = document.getElementById('away-team-name');
@@ -23,10 +26,39 @@
     const linescoreBody = document.querySelector('#linescore tbody');
 
     let currentWs = null;
-    let previousScorecard = null;  // track previous state for change detection
+    let previousScorecard = null;
+    let activeTeam = 'away';    // which team sheet is visible
+    let autoSwitch = true;      // auto-switch to batting team during live games
 
     // Default to today
     dateInput.value = new Date().toISOString().split('T')[0];
+
+    // ─── Team Toggle ──────────────────────────────────────────
+
+    function showTeam(side) {
+        activeTeam = side;
+        if (side === 'away') {
+            awaySheetEl.style.display = '';
+            homeSheetEl.style.display = 'none';
+            toggleAwayBtn.classList.add('active');
+            toggleHomeBtn.classList.remove('active');
+        } else {
+            awaySheetEl.style.display = 'none';
+            homeSheetEl.style.display = '';
+            toggleAwayBtn.classList.remove('active');
+            toggleHomeBtn.classList.add('active');
+        }
+    }
+
+    toggleAwayBtn.addEventListener('click', () => {
+        autoSwitch = false; // user manually toggled, stop auto-switching
+        showTeam('away');
+    });
+
+    toggleHomeBtn.addEventListener('click', () => {
+        autoSwitch = false;
+        showTeam('home');
+    });
 
     // ─── Load Games ───────────────────────────────────────────
 
@@ -72,6 +104,7 @@
 
         if (currentWs) { currentWs.close(); currentWs = null; }
         previousScorecard = null;
+        autoSwitch = true;  // reset auto-switch on new game
 
         loadScorecardBtn.textContent = 'Loading...';
         loadScorecardBtn.disabled = true;
@@ -95,10 +128,6 @@
 
     // ─── Change Detection ─────────────────────────────────────
 
-    /**
-     * Build a fingerprint of each at-bat cell so we can detect which changed.
-     * Returns a Map of "side:playerId:inning" -> fingerprint string
-     */
     function buildFingerprint(sc) {
         const fp = new Map();
         for (const [side, team] of [['away', sc.away_team], ['home', sc.home_team]]) {
@@ -106,12 +135,10 @@
             for (const player of (team.players || [])) {
                 for (const [inn, ab] of Object.entries(player.at_bats || {})) {
                     const key = `${side}:${player.player_id}:${inn}`;
-                    // Fingerprint = result + pitch count + bases reached + rbi + out#
                     const pitchSig = (ab.pitches || []).map(p => p.result).join('');
                     fp.set(key, `${ab.result}|${pitchSig}|${ab.bases_reached}|${ab.rbi}|${ab.out_number}`);
                 }
             }
-            // Also fingerprint the linescore
             for (const it of (team.inning_totals || [])) {
                 fp.set(`${side}:linescore:${it.inning}`, `${it.runs}|${it.hits}|${it.errors}`);
             }
@@ -120,12 +147,9 @@
         return fp;
     }
 
-    /**
-     * Compare old and new fingerprints, return set of changed keys.
-     */
     function detectChanges(oldFp, newFp) {
         const changed = new Set();
-        if (!oldFp) return changed; // first load, no changes
+        if (!oldFp) return changed;
         for (const [key, val] of newFp) {
             if (!oldFp.has(key) || oldFp.get(key) !== val) {
                 changed.add(key);
@@ -146,40 +170,57 @@
         const changed = detectChanges(previousScorecard, newFp);
         previousScorecard = newFp;
 
-        // Build changed-cells sets per side for the renderer
         const changedCells = { away: new Set(), home: new Set() };
         for (const key of changed) {
             const parts = key.split(':');
-            const side = parts[0];  // "away" or "home"
+            const side = parts[0];
             if (parts[1] === 'linescore' || parts[1] === 'totals') continue;
-            changedCells[side].add(`${parts[1]}:${parts[2]}`); // "playerId:inning"
+            changedCells[side].add(`${parts[1]}:${parts[2]}`);
         }
 
         // Show sections
         gameInfoEl.style.display = '';
-        awaySheetEl.style.display = '';
-        homeSheetEl.style.display = '';
+        teamToggle.style.display = '';
         linescoreContainer.style.display = '';
 
         // Game info
         awayTeamEl.textContent = away.team_abbreviation || away.team_name || 'Away';
         homeTeamEl.textContent = home.team_abbreviation || home.team_name || 'Home';
 
-        // Live indicator
         const isLive = sc.game_status === 'In Progress';
         const statusText = isLive
-            ? `LIVE — ${sc.is_top_inning ? 'Top' : 'Bot'} ${sc.current_inning}`
+            ? `LIVE \u2014 ${sc.is_top_inning ? 'Top' : 'Bot'} ${sc.current_inning}`
             : (sc.game_status || '');
         gameStatusEl.textContent = statusText;
         gameStatusEl.className = isLive ? 'live-pulse' : '';
 
         venueEl.textContent = `${sc.game_date || ''} \u2014 ${sc.venue || ''}`;
 
+        // Toggle button labels with team names
+        const awayAbbr = away.team_abbreviation || 'Away';
+        const homeAbbr = home.team_abbreviation || 'Home';
+        toggleAwayBtn.innerHTML = awayAbbr;
+        toggleHomeBtn.innerHTML = homeAbbr;
+
+        // Auto-switch to batting team during live games
+        if (isLive && autoSwitch) {
+            const battingTeam = sc.is_top_inning ? 'away' : 'home';
+            showTeam(battingTeam);
+            // Add green dot to the active (batting) button
+            const activeBtn = battingTeam === 'away' ? toggleAwayBtn : toggleHomeBtn;
+            activeBtn.innerHTML += '<span class="auto-indicator"></span>';
+        } else if (!isLive && isLiveUpdate) {
+            // Game just ended — keep current view
+        } else if (!isLiveUpdate) {
+            // Initial load — show away (top of first)
+            showTeam('away');
+        }
+
         // Team headers
         awayTeamNameEl.textContent = `${away.team_name || 'Away'} (Visiting)`;
         homeTeamNameEl.textContent = `${home.team_name || 'Home'}`;
 
-        // SVG scorecards — pass changed cells for flash highlighting
+        // Render BOTH scorecards (so they're ready when toggled)
         ScoresheetRenderer.render(awaySvg, away, totalInnings,
             isLiveUpdate ? changedCells.away : null);
         ScoresheetRenderer.render(homeSvg, home, totalInnings,
@@ -189,11 +230,10 @@
         renderPitcherBox(document.getElementById('away-pitchers'), away);
         renderPitcherBox(document.getElementById('home-pitchers'), home);
 
-        // Linescore — flash if scores changed
+        // Linescore
         const linescoreChanged = isLiveUpdate && [...changed].some(k => k.includes('linescore') || k.includes('totals'));
         renderLinescore(sc, totalInnings, linescoreChanged);
 
-        // Flash the last-updated timestamp
         if (isLiveUpdate && changed.size > 0 && isLive) {
             showUpdateFlash();
         }
@@ -209,7 +249,6 @@
         const now = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
         el.textContent = `Updated ${now}`;
         el.classList.remove('flash');
-        // Force reflow to restart animation
         void el.offsetWidth;
         el.classList.add('flash');
     }
