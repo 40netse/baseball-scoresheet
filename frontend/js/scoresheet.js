@@ -60,7 +60,21 @@ const ScoresheetRenderer = {
         svgEl.innerHTML = '';
 
         const players = teamData.players || [];
-        const numRows = Math.max(players.length, 9);
+
+        // Group players by batting order slot (starter + subs together)
+        const slotMap = {};
+        const slotOrder = [];
+        for (const p of players) {
+            const slot = p.batting_order;
+            if (!slotMap[slot]) { slotMap[slot] = []; slotOrder.push(slot); }
+            slotMap[slot].push(p);
+        }
+        for (const slot of slotOrder) {
+            slotMap[slot].sort((a, b) => a.batting_order_seq - b.batting_order_seq);
+        }
+        const slots = slotOrder.map(s => slotMap[s]);
+
+        const numRows = Math.max(slots.length, 9);
         const numInn = Math.max(totalInnings, 9);
         const W = HEADER_W + (numInn * CELL_W) + (TOTALS_COLS.length * TOTALS_COL_W) + 1;
         const H = HDR_H + (numRows * CELL_H) + SUMMARY_ROW_H + 1;
@@ -95,13 +109,12 @@ const ScoresheetRenderer = {
         // Header row
         this._drawHeader(contentLayer, numInn, W);
 
-        // Player rows
-        players.forEach((player, idx) => {
-            this._drawPlayerRow(contentLayer, player, idx, numInn, teamData, changedCells);
+        // Player rows (grouped by batting order slot)
+        slots.forEach((slot, idx) => {
+            this._drawPlayerRow(contentLayer, slot, idx, numInn, teamData, changedCells);
         });
 
-        // Grid lines (on top of backgrounds, below content text — but we draw grid last
-        // so the lines are crisp on top)
+        // Grid lines
         this._drawGrid(gridLayer, numRows, numInn, W, H);
 
         // Summary row at bottom
@@ -131,89 +144,12 @@ const ScoresheetRenderer = {
         });
     },
 
-    // ─── PLAYER ROW ───────────────────────────────────────────
+    // ─── PLAYER ROW (handles starter + subs in one row) ────────
 
-    _drawPlayerRow(layer, player, rowIdx, numInn, teamData, changedCells) {
-        const y = HDR_H + rowIdx * CELL_H;
-        const g = this._g(layer, `p${rowIdx}`);
-
-        // Alternating row tint on name columns
-        if (rowIdx % 2 === 1) {
-            this._rect(g, 0, y, HEADER_W, CELL_H, PAPER_ALT);
-        }
-
-        // Batting order number
-        this._txt(g, NUM_COL_W / 2, y + CELL_H / 2 + 5, String(player.batting_order || ''),
-            { anchor: 'middle', size: 14, bold: true });
-
-        // Player name
-        const name = player.name || '';
-        const display = name.length > 16 ? name.substring(0, 16) + '.' : name;
-        this._txt(g, NUM_COL_W + 5, y + 28, display, { size: 11 });
-
-        // Jersey number
-        if (player.jersey_number) {
-            this._txt(g, NUM_COL_W + 5, y + 42, `#${player.jersey_number}`, { size: 9, fill: '#999' });
-        }
-
-        // Sub indicator
-        if (player.batting_order_seq > 0) {
-            this._txt(g, NUM_COL_W + 5, y + 55, 'SUB', {
-                size: 8, fill: ACCENT, bold: true
-            });
-        }
-
-        // Position — split if position_changes exist
-        const posChanges = player.position_changes || [];
-        if (posChanges.length > 0) {
-            const halfH = CELL_H / 2;
-            this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + 22,
-                player.position || '', { anchor: 'middle', size: 10, bold: true });
-            this._seg(g, [NUM_COL_W + NAME_COL_W, y + halfH],
-                [HEADER_W, y + halfH], ACCENT, 1.5);
-            const lastChange = posChanges[posChanges.length - 1];
-            this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + halfH + 18,
-                lastChange.to_pos || '', { anchor: 'middle', size: 10, bold: true, fill: ACCENT });
-
-            // Red vertical line at the inning where the position change happened
-            for (const pc of posChanges) {
-                if (pc.inning >= 1 && pc.inning <= numInn) {
-                    const lx = HEADER_W + (pc.inning - 1) * CELL_W;
-                    this._seg(g, [lx, y + 2], [lx, y + CELL_H - 2], ACCENT, 2.5);
-                }
-            }
-        } else {
-            this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + CELL_H / 2 + 5,
-                player.position || '', { anchor: 'middle', size: 13, bold: true });
-        }
-
-        // At-bat cells
-        const atBats = player.at_bats || {};
-        for (let inn = 1; inn <= numInn; inn++) {
-            const ab = atBats[String(inn)];
-            if (ab) {
-                const cellX = HEADER_W + (inn - 1) * CELL_W;
-
-                // Flash background if this cell changed
-                const cellKey = `${player.player_id}:${inn}`;
-                if (changedCells && changedCells.has(cellKey)) {
-                    const flash = this._rect(g, cellX + 1, y + 1, CELL_W - 2, CELL_H - 2, FLASH_BG);
-                    flash.setAttribute('class', 'cell-changed');
-                }
-
-                this._drawAtBat(g, cellX, y, ab, teamData);
-            }
-        }
-
-        // Totals — compute from at_bats
-        this._drawPlayerTotals(g, player, numInn, y);
-    },
-
-    _drawPlayerTotals(g, player, numInn, y) {
+    _computeTotals(player) {
         const atBats = player.at_bats || {};
         let ab = 0, r = 0, h = 0, rbi = 0;
         for (const [, pa] of Object.entries(atBats)) {
-            // AB excludes walks, HBP, sacrifices
             const res = (pa.result || '').toUpperCase();
             const isNotAB = ['BB', 'IBB', 'HP', 'HBP', 'INT'].includes(res)
                 || res.startsWith('SAC') || res.startsWith('SF');
@@ -222,13 +158,153 @@ const ScoresheetRenderer = {
             if (['1B', '2B', '3B', 'HR'].includes(res)) h++;
             rbi += pa.rbi || 0;
         }
+        return [ab, r, h, rbi];
+    },
 
-        const vals = [ab, r, h, rbi];
+    _truncName(name, max = 14) {
+        return name.length > max ? name.substring(0, max) + '.' : name;
+    },
+
+    _lastInning(player) {
+        const innings = Object.keys(player.at_bats || {}).map(Number).filter(n => n < 100);
+        return innings.length > 0 ? Math.max(...innings) : 0;
+    },
+
+    _firstInning(player) {
+        const innings = Object.keys(player.at_bats || {}).map(Number).filter(n => n < 100);
+        return innings.length > 0 ? Math.min(...innings) : 99;
+    },
+
+    _drawPlayerRow(layer, slot, rowIdx, numInn, teamData, changedCells) {
+        // slot = array of players in this batting order position, sorted by seq
+        const y = HDR_H + rowIdx * CELL_H;
+        const g = this._g(layer, `p${rowIdx}`);
+        const starter = slot[0];
+        const subs = slot.slice(1);
+        const hasSub = subs.length > 0;
+        const halfH = CELL_H / 2;
+
+        // Figure out sub inning
+        let subInning = null;
+        if (hasSub) {
+            const starterLast = this._lastInning(starter);
+            const subFirst = this._firstInning(subs[0]);
+            subInning = subFirst < 99 ? subFirst : (starterLast > 0 ? starterLast + 1 : null);
+        }
+
+        // Combine at-bats from starter + subs
+        const allAtBats = Object.assign({}, starter.at_bats || {});
+        for (const sub of subs) {
+            for (const [inn, ab] of Object.entries(sub.at_bats || {})) {
+                allAtBats[inn] = ab;
+            }
+        }
+
+        // Position changes from all players in slot
+        const posChanges = (starter.position_changes || []).concat(
+            ...subs.map(s => s.position_changes || [])
+        );
+
+        // Alternating row tint
+        if (rowIdx % 2 === 1) {
+            this._rect(g, 0, y, HEADER_W, CELL_H, PAPER_ALT);
+        }
+
+        // Batting order number
+        this._txt(g, NUM_COL_W / 2, y + CELL_H / 2 + 5, String(starter.batting_order || ''),
+            { anchor: 'middle', size: 14, bold: true });
+
+        if (hasSub) {
+            // ── Split name box: starter on top, sub on bottom ──
+            this._txt(g, NUM_COL_W + 5, y + 18, this._truncName(starter.name), { size: 10 });
+            this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + 18,
+                starter.position || '', { anchor: 'middle', size: 10, bold: true });
+            // Divider across name+pos
+            this._seg(g, [NUM_COL_W, y + halfH], [HEADER_W, y + halfH], ACCENT, 1.5);
+            // Sub name + position in red
+            this._txt(g, NUM_COL_W + 5, y + halfH + 16, this._truncName(subs[0].name),
+                { size: 10, fill: ACCENT });
+            this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + halfH + 16,
+                subs[0].position || '', { anchor: 'middle', size: 10, bold: true, fill: ACCENT });
+            if (subs.length > 1) {
+                this._txt(g, NUM_COL_W + 5, y + halfH + 30, `+${subs.length - 1} more`,
+                    { size: 7, fill: '#999' });
+            }
+        } else {
+            // ── Single player ──
+            this._txt(g, NUM_COL_W + 5, y + 28, this._truncName(starter.name, 16), { size: 11 });
+            if (starter.jersey_number && !posChanges.length) {
+                this._txt(g, NUM_COL_W + 5, y + 42, `#${starter.jersey_number}`, { size: 9, fill: '#999' });
+            }
+
+            // Position — split if position_changes exist
+            if (posChanges.length > 0) {
+                this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + 22,
+                    starter.position || '', { anchor: 'middle', size: 10, bold: true });
+                this._seg(g, [NUM_COL_W + NAME_COL_W, y + halfH],
+                    [HEADER_W, y + halfH], ACCENT, 1.5);
+                const lastChange = posChanges[posChanges.length - 1];
+                this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + halfH + 18,
+                    lastChange.to_pos || '', { anchor: 'middle', size: 10, bold: true, fill: ACCENT });
+            } else {
+                this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + CELL_H / 2 + 5,
+                    starter.position || '', { anchor: 'middle', size: 13, bold: true });
+            }
+        }
+
+        // At-bat cells (combined from starter + subs)
+        for (let inn = 1; inn <= numInn; inn++) {
+            const ab = allAtBats[String(inn)];
+            if (ab) {
+                const cellX = HEADER_W + (inn - 1) * CELL_W;
+                const cellKey = `${starter.player_id}:${inn}`;
+                if (changedCells && changedCells.has(cellKey)) {
+                    const flash = this._rect(g, cellX + 1, y + 1, CELL_W - 2, CELL_H - 2, FLASH_BG);
+                    flash.setAttribute('class', 'cell-changed');
+                }
+                this._drawAtBat(g, cellX, y, ab, teamData);
+            }
+        }
+
+        // Bold red vertical line at sub/position-change inning boundary
+        if (subInning && subInning >= 1 && subInning <= numInn) {
+            const lx = HEADER_W + (subInning - 1) * CELL_W;
+            this._seg(g, [lx, y + 2], [lx, y + CELL_H - 2], ACCENT, 2.5);
+        }
+        for (const pc of posChanges) {
+            if (pc.inning >= 1 && pc.inning <= numInn && pc.inning !== subInning) {
+                const lx = HEADER_W + (pc.inning - 1) * CELL_W;
+                this._seg(g, [lx, y + 2], [lx, y + CELL_H - 2], ACCENT, 2.5);
+            }
+        }
+
+        // Totals — split when sub exists
         const baseX = HEADER_W + numInn * CELL_W;
-        vals.forEach((v, i) => {
-            this._txt(g, baseX + i * TOTALS_COL_W + TOTALS_COL_W / 2, y + CELL_H / 2 + 5,
-                String(v), { anchor: 'middle', size: 13, bold: true });
-        });
+        if (hasSub) {
+            const starterTotals = this._computeTotals(starter);
+            const subTotals = this._computeTotals(subs[0]);
+            starterTotals.forEach((v, i) => {
+                this._txt(g, baseX + i * TOTALS_COL_W + TOTALS_COL_W / 2, y + 22,
+                    String(v), { anchor: 'middle', size: 11, bold: true });
+            });
+            // Divider across totals area
+            for (let i = 0; i < TOTALS_COLS.length; i++) {
+                this._seg(g,
+                    [baseX + i * TOTALS_COL_W + 2, y + halfH],
+                    [baseX + (i + 1) * TOTALS_COL_W - 2, y + halfH],
+                    ACCENT, 1.5);
+            }
+            subTotals.forEach((v, i) => {
+                this._txt(g, baseX + i * TOTALS_COL_W + TOTALS_COL_W / 2, y + halfH + 20,
+                    String(v), { anchor: 'middle', size: 11, bold: true, fill: ACCENT });
+            });
+        } else {
+            const vals = this._computeTotals(starter);
+            vals.forEach((v, i) => {
+                this._txt(g, baseX + i * TOTALS_COL_W + TOTALS_COL_W / 2, y + CELL_H / 2 + 5,
+                    String(v), { anchor: 'middle', size: 13, bold: true });
+            });
+        }
     },
 
     // ─── AT-BAT CELL ──────────────────────────────────────────
