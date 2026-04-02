@@ -495,7 +495,7 @@ body {
 @media print {
     @page {
         size: landscape;
-        margin: 0.3in;
+        margin: 0.25in;
     }
 
     body {
@@ -523,9 +523,19 @@ body {
         page-break-after: auto;
     }
 
-    /* Print linescore */
+    /* Force everything to fit on one landscape page per team */
+    .print-page {
+        width: 100%;
+        height: 100vh;
+        display: flex !important;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    /* Print linescore — compact */
     .print-page .print-linescore {
-        margin: 0 auto 8px;
+        margin: 0 auto 4px;
+        flex-shrink: 0;
     }
 
     .print-page .print-linescore table {
@@ -533,15 +543,15 @@ body {
         margin: 0 auto;
         border-collapse: collapse;
         font-family: 'Courier New', monospace;
-        font-size: 13px;
+        font-size: 10px;
     }
 
     .print-page .print-linescore th,
     .print-page .print-linescore td {
         border: 1px solid #000;
-        padding: 4px 8px;
+        padding: 2px 6px;
         text-align: center;
-        min-width: 28px;
+        min-width: 22px;
     }
 
     .print-page .print-linescore th {
@@ -549,56 +559,82 @@ body {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
         font-weight: bold;
-        font-size: 11px;
+        font-size: 9px;
     }
 
     .print-page .print-linescore td:first-child {
         text-align: left;
         font-weight: bold;
-        min-width: 60px;
+        min-width: 40px;
     }
 
-    /* Print team sheet */
+    /* Print team sheet — fills available space */
     .print-page .team-sheet {
         box-shadow: none !important;
-        border: 2px solid #000 !important;
-        padding: 8px !important;
-        margin-bottom: 8px;
+        border: 1px solid #000 !important;
+        padding: 4px !important;
+        margin-bottom: 4px;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
     }
 
     .print-page .team-sheet h2 {
         border-bottom-color: #000 !important;
         color: #000 !important;
-        margin-bottom: 6px;
-        padding-bottom: 4px;
+        margin-bottom: 2px;
+        padding-bottom: 2px;
+        font-size: 12px;
+        letter-spacing: 2px;
     }
 
-    /* Print pitcher box */
+    .print-page .scorecard-svg {
+        width: 100% !important;
+        height: auto !important;
+        max-height: 100%;
+        min-height: 0 !important;
+    }
+
+    /* Print pitcher box — compact at bottom */
     .print-page .pitcher-box {
         box-shadow: none !important;
-        border: 2px solid #000 !important;
-        margin-top: 6px;
-        padding: 6px 8px;
+        border: 1px solid #000 !important;
+        margin-top: 2px;
+        padding: 3px 6px;
+        flex-shrink: 0;
     }
 
     .print-page .pitcher-box h3 {
         color: #000 !important;
-        font-size: 11px;
-        margin-bottom: 4px;
+        font-size: 9px;
+        margin-bottom: 2px;
+        letter-spacing: 1px;
     }
 
     .print-page .pitcher-box table {
-        font-size: 11px;
+        font-size: 9px;
     }
 
     .print-page .pitcher-box th {
         background: #ddd !important;
         color: #000 !important;
+        padding: 2px 3px;
+        font-size: 8px;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
 
+    .print-page .pitcher-box td {
+        padding: 2px 3px;
+        font-size: 9px;
+    }
+
+    .print-page .pitcher-box td:first-child {
+        font-size: 8px;
+    }
+
     .print-page .pitcher-box .decision {
+        font-size: 8px;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
