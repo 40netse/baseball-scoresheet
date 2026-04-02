@@ -3,11 +3,13 @@
  */
 
 (function () {
+    const headerBar = document.getElementById('header-bar');
+    const gameView = document.getElementById('game-view');
+    const backBtn = document.getElementById('back-btn');
     const dateInput = document.getElementById('game-date');
     const loadGamesBtn = document.getElementById('load-games');
     const gameList = document.getElementById('game-list');
     const loadScorecardBtn = document.getElementById('load-scorecard');
-    const gameInfoEl = document.getElementById('game-info');
     const awayTeamEl = document.getElementById('away-team');
     const homeTeamEl = document.getElementById('home-team');
     const gameStatusEl = document.getElementById('game-status');
@@ -18,7 +20,6 @@
     const homeTeamNameEl = document.getElementById('home-team-name');
     const awaySvg = document.getElementById('away-scorecard');
     const homeSvg = document.getElementById('home-scorecard');
-    const linescoreContainer = document.getElementById('linescore-container');
     const linescoreHead = document.querySelector('#linescore thead tr');
     const linescoreBody = document.querySelector('#linescore tbody');
 
@@ -27,10 +28,25 @@
     let activeTeam = 'away';
     let autoSwitch = true;
 
-    // Default to today
     dateInput.value = new Date().toISOString().split('T')[0];
 
-    // ─── Team Toggle (via game info bar team names) ───────────
+    // ─── View Switching ───────────────────────────────────────
+
+    function showGameView() {
+        headerBar.style.display = 'none';
+        gameView.style.display = '';
+    }
+
+    function showSelectorView() {
+        if (currentWs) { currentWs.close(); currentWs = null; }
+        previousScorecard = null;
+        headerBar.style.display = '';
+        gameView.style.display = 'none';
+    }
+
+    backBtn.addEventListener('click', showSelectorView);
+
+    // ─── Team Toggle (click team names in game bar) ───────────
 
     function showTeam(side) {
         activeTeam = side;
@@ -112,6 +128,7 @@
 
         try {
             const scorecard = await ScoresheetAPI.getScorecard(gamePk);
+            showGameView();
             renderScorecard(scorecard, false);
 
             if (scorecard.game_status === 'In Progress') {
@@ -166,7 +183,6 @@
         const home = sc.home_team || {};
         const totalInnings = sc.total_innings || 9;
 
-        // Detect changes
         const newFp = buildFingerprint(sc);
         const changed = detectChanges(previousScorecard, newFp);
         previousScorecard = newFp;
@@ -179,12 +195,7 @@
             changedCells[side].add(`${parts[1]}:${parts[2]}`);
         }
 
-        // Show sections
-        gameInfoEl.style.display = '';
-        linescoreContainer.style.display = '';
-        document.getElementById('game-layout').style.display = '';
-
-        // Game info — team names are clickable toggles
+        // Game bar
         const awayAbbr = away.team_abbreviation || away.team_name || 'Away';
         const homeAbbr = home.team_abbreviation || home.team_name || 'Home';
 
@@ -197,7 +208,7 @@
 
         venueEl.textContent = `${sc.game_date || ''} \u2014 ${sc.venue || ''}`;
 
-        // Auto-switch to batting team during live games
+        // Auto-switch to batting team
         if (isLive && autoSwitch) {
             const battingTeam = sc.is_top_inning ? 'away' : 'home';
             showTeam(battingTeam);
@@ -205,16 +216,14 @@
             showTeam('away');
         }
 
-        // Update team name text + auto indicator
+        // Team names with auto indicator
         awayTeamEl.innerHTML = awayAbbr +
             (isLive && autoSwitch && sc.is_top_inning ? '<span class="auto-indicator"></span>' : '');
         homeTeamEl.innerHTML = homeAbbr +
             (isLive && autoSwitch && !sc.is_top_inning ? '<span class="auto-indicator"></span>' : '');
-
-        // Re-apply active/inactive classes after innerHTML change
         showTeam(activeTeam);
 
-        // Team headers
+        // Team sheet headers
         awayTeamNameEl.textContent = `${away.team_name || 'Away'} (Visiting)`;
         homeTeamNameEl.textContent = `${home.team_name || 'Home'}`;
 
@@ -224,14 +233,15 @@
         ScoresheetRenderer.render(homeSvg, home, totalInnings,
             isLiveUpdate ? changedCells.home : null);
 
-        // Pitcher boxes (left = away/visitor, right = home)
+        // Pitcher boxes (side by side above scoresheet)
         renderPitcherBox(document.getElementById('away-pitchers'), away,
             away.team_abbreviation || 'Away');
         renderPitcherBox(document.getElementById('home-pitchers'), home,
             home.team_abbreviation || 'Home');
 
         // Linescore
-        const linescoreChanged = isLiveUpdate && [...changed].some(k => k.includes('linescore') || k.includes('totals'));
+        const linescoreChanged = isLiveUpdate && [...changed].some(k =>
+            k.includes('linescore') || k.includes('totals'));
         renderLinescore(sc, totalInnings, linescoreChanged);
 
         if (isLiveUpdate && changed.size > 0 && isLive) {
@@ -244,9 +254,11 @@
         if (!el) {
             el = document.createElement('div');
             el.id = 'update-flash';
-            document.querySelector('header').appendChild(el);
+            document.getElementById('game-top-bar').appendChild(el);
         }
-        const now = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+        const now = new Date().toLocaleTimeString([], {
+            hour: 'numeric', minute: '2-digit', second: '2-digit'
+        });
         el.textContent = `Updated ${now}`;
         el.classList.remove('flash');
         void el.offsetWidth;

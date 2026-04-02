@@ -19,13 +19,14 @@ body {
     min-height: 100vh;
 }
 
-/* Header */
-header {
+/* ─── Header / Game Selector ──────────────────────────── */
+
+#header-bar {
     text-align: center;
     margin-bottom: 24px;
 }
 
-header h1 {
+#header-bar h1 {
     font-family: 'Special Elite', 'Courier New', monospace;
     font-size: 32px;
     letter-spacing: 4px;
@@ -35,7 +36,6 @@ header h1 {
     text-shadow: 1px 1px 0 rgba(0,0,0,0.05);
 }
 
-/* Game selector */
 #game-selector {
     display: flex;
     align-items: center;
@@ -89,22 +89,49 @@ header h1 {
     cursor: not-allowed;
 }
 
-/* Game info bar */
-#game-info {
-    text-align: center;
-    margin-bottom: 24px;
-    padding: 12px 16px;
+/* ─── Game Top Bar (replaces header when game is loaded) ─── */
+
+#game-top-bar {
     background: #3a3530;
     color: #f5f0e8;
-    letter-spacing: 1px;
+    padding: 10px 16px;
     border-radius: 3px;
+    margin-bottom: 12px;
     max-width: 1400px;
     margin-left: auto;
     margin-right: auto;
+    position: relative;
+    text-align: center;
+}
+
+#back-btn {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: bold;
+    padding: 4px 12px;
+    cursor: pointer;
+    background: rgba(255,255,255,0.12);
+    color: #f5f0e8;
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+#back-btn:hover {
+    background: rgba(255,255,255,0.25);
+}
+
+#game-info {
+    display: inline;
 }
 
 #game-info .vs {
-    margin: 0 12px;
+    margin: 0 10px;
     font-style: italic;
     opacity: 0.6;
     font-size: 14px;
@@ -116,7 +143,7 @@ header h1 {
     font-size: 18px;
     letter-spacing: 2px;
     cursor: pointer;
-    padding: 4px 12px;
+    padding: 4px 10px;
     border-radius: 3px;
     transition: background 0.15s, opacity 0.15s;
 }
@@ -152,17 +179,27 @@ header h1 {
 }
 
 #game-info #game-status {
-    margin-left: 16px;
+    margin-left: 14px;
     font-size: 13px;
     opacity: 0.8;
     border-left: 1px solid rgba(255,255,255,0.3);
-    padding-left: 16px;
+    padding-left: 14px;
 }
 
 #game-info #game-status.live-pulse {
     color: #5f5;
     font-weight: bold;
     animation: live-blink 2s ease-in-out infinite;
+}
+
+#venue {
+    display: block;
+    font-size: 11px;
+    opacity: 0.5;
+    margin-top: 4px;
+    letter-spacing: 0.5px;
+    color: #f5f0e8;
+    text-align: center;
 }
 
 @keyframes live-blink {
@@ -178,6 +215,7 @@ header h1 {
     margin-top: 6px;
     opacity: 0;
     transition: opacity 0.3s;
+    text-align: center;
 }
 
 #update-flash.flash {
@@ -200,71 +238,11 @@ header h1 {
     100% { background-color: transparent; }
 }
 
-#game-info #venue {
-    display: block;
-    font-size: 11px;
-    opacity: 0.5;
-    margin-top: 4px;
-    letter-spacing: 0.5px;
-}
+/* ─── Line Score ──────────────────────────────────────── */
 
-/* Game layout: pitcher box | scoresheet | pitcher box */
-#game-layout {
-    display: flex;
-    gap: 12px;
-    max-width: 1800px;
-    margin: 0 auto;
-    align-items: flex-start;
-}
-
-.pitcher-box-side {
-    flex: 0 0 200px;
-    min-width: 180px;
-    max-width: 220px;
-    position: sticky;
-    top: 10px;
-}
-
-/* Scoresheet container */
-#scoresheet-container {
-    flex: 1;
-    min-width: 0;
-    overflow-x: auto;
-}
-
-.team-sheet {
-    background: #fcf9f3;
-    border: 2px solid #3a3530;
-    padding: 16px 16px 12px;
-    overflow-x: auto;
-    box-shadow:
-        2px 2px 8px rgba(0,0,0,0.1),
-        inset 0 0 40px rgba(139, 119, 101, 0.04);
-    border-radius: 2px;
-}
-
-.team-sheet h2 {
-    font-family: 'Special Elite', 'Courier New', monospace;
-    font-size: 16px;
-    text-transform: uppercase;
-    letter-spacing: 3px;
-    margin-bottom: 10px;
-    border-bottom: 2px solid #3a3530;
-    padding-bottom: 6px;
-    color: #3a3530;
-}
-
-/* SVG scorecard */
-.scorecard-svg {
-    width: 100%;
-    min-height: 400px;
-    display: block;
-}
-
-/* Line score table */
 #linescore-container {
     max-width: 900px;
-    margin: 30px auto;
+    margin: 0 auto 12px;
 }
 
 #linescore {
@@ -299,7 +277,6 @@ header h1 {
     letter-spacing: 1px;
 }
 
-/* R/H/E separator */
 #linescore th:nth-last-child(-n+3) {
     background: #5a4a3a;
 }
@@ -309,21 +286,36 @@ header h1 {
     background: #f5f0e6;
 }
 
-/* Pitcher Box */
+/* ─── Pitcher Row (two boxes side by side) ────────────── */
+
+#pitcher-row {
+    display: flex;
+    gap: 12px;
+    max-width: 1400px;
+    margin: 0 auto 12px;
+}
+
+#pitcher-row .pitcher-box {
+    flex: 1;
+    min-width: 0;
+}
+
+/* ─── Pitcher Box ─────────────────────────────────────── */
+
 .pitcher-box {
     background: #fcf9f3;
     border: 2px solid #3a3530;
     border-radius: 2px;
-    padding: 10px 8px;
+    padding: 8px 10px;
     box-shadow: 2px 2px 8px rgba(0,0,0,0.1);
 }
 
 .pitcher-box h3 {
     font-family: 'Special Elite', 'Courier New', monospace;
-    font-size: 13px;
+    font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 2px;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     color: #3a3530;
 }
 
@@ -331,15 +323,15 @@ header h1 {
     width: 100%;
     border-collapse: collapse;
     font-family: 'Courier New', monospace;
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .pitcher-box th {
     background: #3a3530;
     color: #f5f0e8;
-    padding: 3px 4px;
+    padding: 4px 5px;
     text-align: center;
-    font-size: 9px;
+    font-size: 10px;
     font-weight: bold;
     letter-spacing: 0.5px;
     white-space: nowrap;
@@ -350,16 +342,16 @@ header h1 {
 }
 
 .pitcher-box td {
-    padding: 3px 4px;
+    padding: 4px 5px;
     text-align: center;
     border-bottom: 1px solid #d5cfc5;
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .pitcher-box td:first-child {
     text-align: left;
     font-weight: normal;
-    font-size: 10px;
+    font-size: 11px;
     white-space: nowrap;
 }
 
@@ -370,50 +362,17 @@ header h1 {
 .pitcher-box .decision {
     display: inline-block;
     font-weight: bold;
-    font-size: 9px;
-    margin-left: 3px;
-    padding: 1px 3px;
+    font-size: 10px;
+    margin-left: 4px;
+    padding: 1px 4px;
     border-radius: 2px;
     letter-spacing: 0.5px;
 }
 
-/* Responsive: stack pitcher boxes below on narrow screens */
-@media (max-width: 1100px) {
-    #game-layout {
-        flex-direction: column;
-    }
-
-    .pitcher-box-side {
-        flex: none;
-        max-width: 100%;
-        min-width: 0;
-        position: static;
-    }
-
-    #game-layout {
-        gap: 16px;
-    }
-}
-
-.pitcher-box .decision-W {
-    background: #2e6b2e;
-    color: #fff;
-}
-
-.pitcher-box .decision-L {
-    background: #b22222;
-    color: #fff;
-}
-
-.pitcher-box .decision-S {
-    background: #1a5276;
-    color: #fff;
-}
-
-.pitcher-box .decision-H {
-    background: #7d6608;
-    color: #fff;
-}
+.pitcher-box .decision-W { background: #2e6b2e; color: #fff; }
+.pitcher-box .decision-L { background: #b22222; color: #fff; }
+.pitcher-box .decision-S { background: #1a5276; color: #fff; }
+.pitcher-box .decision-H { background: #7d6608; color: #fff; }
 
 .pitcher-box .totals-row td {
     border-top: 2px solid #3a3530;
@@ -427,13 +386,49 @@ header h1 {
     color: #888;
 }
 
-/* Responsive */
+/* ─── Scoresheet ──────────────────────────────────────── */
+
+#scoresheet-container {
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.team-sheet {
+    background: #fcf9f3;
+    border: 2px solid #3a3530;
+    padding: 16px 16px 12px;
+    overflow-x: auto;
+    box-shadow:
+        2px 2px 8px rgba(0,0,0,0.1),
+        inset 0 0 40px rgba(139, 119, 101, 0.04);
+    border-radius: 2px;
+}
+
+.team-sheet h2 {
+    font-family: 'Special Elite', 'Courier New', monospace;
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    margin-bottom: 10px;
+    border-bottom: 2px solid #3a3530;
+    padding-bottom: 6px;
+    color: #3a3530;
+}
+
+.scorecard-svg {
+    width: 100%;
+    min-height: 400px;
+    display: block;
+}
+
+/* ─── Responsive ──────────────────────────────────────── */
+
 @media (max-width: 900px) {
     body {
         padding: 10px;
     }
 
-    header h1 {
+    #header-bar h1 {
         font-size: 22px;
         letter-spacing: 2px;
     }
@@ -448,5 +443,19 @@ header h1 {
 
     .team-sheet {
         padding: 8px;
+    }
+
+    #pitcher-row {
+        flex-direction: column;
+    }
+
+    #back-btn {
+        position: static;
+        transform: none;
+        margin-bottom: 8px;
+    }
+
+    #game-top-bar {
+        text-align: center;
     }
 }

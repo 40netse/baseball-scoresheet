@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="css/scoresheet.css">
 </head>
 <body>
-    <header>
+    <header id="header-bar">
         <h1>Baseball Scoresheet</h1>
         <div id="game-selector">
             <label for="game-date">Date:</label>
@@ -21,31 +21,39 @@
     </header>
 
     <main>
-        <div id="game-info" style="display:none;">
-            <span id="away-team"></span>
-            <span class="vs">at</span>
-            <span id="home-team"></span>
-            <span id="game-status"></span>
-            <span id="venue"></span>
-        </div>
+        <!-- Game view (hidden until a game is loaded) -->
+        <div id="game-view" style="display:none;">
+            <div id="game-top-bar">
+                <button id="back-btn">&larr; Back</button>
+                <div id="game-info">
+                    <span id="away-team"></span>
+                    <span class="vs">at</span>
+                    <span id="home-team"></span>
+                    <span id="game-status"></span>
+                </div>
+                <span id="venue"></span>
+            </div>
 
-        <!-- Line score -->
-        <div id="linescore-container" style="display:none;">
-            <table id="linescore">
-                <thead>
-                    <tr></tr>
-                </thead>
-                <tbody>
-                    <tr id="away-linescore"></tr>
-                    <tr id="home-linescore"></tr>
-                </tbody>
-            </table>
-        </div>
+            <!-- Line score -->
+            <div id="linescore-container">
+                <table id="linescore">
+                    <thead>
+                        <tr></tr>
+                    </thead>
+                    <tbody>
+                        <tr id="away-linescore"></tr>
+                        <tr id="home-linescore"></tr>
+                    </tbody>
+                </table>
+            </div>
 
-        <!-- Main layout: away pitchers | scoresheet | home pitchers -->
-        <div id="game-layout" style="display:none;">
-            <div id="away-pitchers" class="pitcher-box pitcher-box-side"></div>
+            <!-- Pitcher boxes side by side -->
+            <div id="pitcher-row">
+                <div id="away-pitchers" class="pitcher-box"></div>
+                <div id="home-pitchers" class="pitcher-box"></div>
+            </div>
 
+            <!-- Scoresheet -->
             <div id="scoresheet-container">
                 <div class="team-sheet" id="away-sheet" style="display:none;">
                     <h2 id="away-team-name">Away</h2>
@@ -56,8 +64,6 @@
                     <svg id="home-scorecard" class="scorecard-svg"></svg>
                 </div>
             </div>
-
-            <div id="home-pitchers" class="pitcher-box pitcher-box-side"></div>
         </div>
     </main>
 
