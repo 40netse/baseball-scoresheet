@@ -450,11 +450,47 @@ def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
     # Key: player_id -> most recent AtBat object (the one they're currently on base from)
     player_last_at_bat = {}  # player_id -> AtBat
 
+    # Track which extras half-innings have had their zombie-runner cell created
+    seen_extras_halves = set()
+
     for play in all_plays:
         about = play.get("about", {})
         inning = about.get("inning", 0)
         is_top = about.get("isTopInning", True)
         at_bat_index = about.get("atBatIndex", 0)
+
+        # Extras zombie-runner detection: for each extras half-inning, the
+        # first play where the placed runner appears in runners (origin=2B,
+        # start=2B) creates a synthetic "placed on 2B" cell on the runner's
+        # row. Subsequent advancements/scores/outs attach to this cell via
+        # player_last_at_bat.
+        if inning >= 10:
+            half_key = (inning, is_top)
+            if half_key not in seen_extras_halves:
+                batter_id_for_zr = play.get("matchup", {}).get("batter", {}).get("id")
+                for r in play.get("runners", []):
+                    mov = r.get("movement", {})
+                    if mov.get("originBase") == "2B" and mov.get("start") == "2B":
+                        zr_id = r.get("details", {}).get("runner", {}).get("id")
+                        zr_name = r.get("details", {}).get("runner", {}).get("fullName", "")
+                        if zr_id and zr_id != batter_id_for_zr and zr_id in player_lookup:
+                            runner_line = player_lookup[zr_id]
+                            zr_cell = AtBat(
+                                batter_name=zr_name,
+                                batter_id=zr_id,
+                                inning=inning,
+                                bases_reached=2,          # started on 2B
+                                is_ghost_runner=True,
+                            )
+                            slot_key = inning
+                            offset = 1
+                            while slot_key in runner_line.at_bats:
+                                slot_key = inning + offset * 100
+                                offset += 1
+                            runner_line.at_bats[slot_key] = zr_cell
+                            player_last_at_bat[zr_id] = zr_cell
+                            seen_extras_halves.add(half_key)
+                            break
 
         # Build at-bat
         matchup = play.get("matchup", {})
@@ -502,11 +538,10 @@ def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
         at_bat.description = result.get("description", "")
 
         # Determine batter's out number
-        if at_bat.is_out:
-            count_info = play.get("count", {})
-            at_bat.out_number = count_info.get("outs")
-
-        # Determine how far the batter reached
+        # Determine how far the batter reached + extract the batter's own
+        # out number from their runner entry. The runner-entry outNumber is
+        # correct even on double plays (count.outs is the TOTAL after the
+        # play, which would mis-label the batter as out #2 on an 8-5 DP).
         for r in play.get("runners", []):
             if r.get("movement", {}).get("originBase") is None:
                 # This is the batter
@@ -514,9 +549,13 @@ def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
                 at_bat.bases_reached = BASE_MAP.get(end, 0)
                 if r.get("movement", {}).get("isOut"):
                     at_bat.bases_reached = 0
-                    if at_bat.out_number is None:
-                        at_bat.out_number = r.get("movement", {}).get("outNumber")
+                    at_bat.out_number = r.get("movement", {}).get("outNumber")
                 break
+
+        # Fallback for out plays where the batter's runner entry wasn't found
+        if at_bat.is_out and at_bat.out_number is None:
+            count_info = play.get("count", {})
+            at_bat.out_number = count_info.get("outs")
 
         # Track this batter's at-bat if they reached base
         if at_bat.bases_reached > 0:
