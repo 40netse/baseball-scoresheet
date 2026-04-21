@@ -202,6 +202,8 @@ const ScoresheetRenderer = {
         const atBats = player.at_bats || {};
         let ab = 0, r = 0, h = 0, rbi = 0;
         for (const [, pa] of Object.entries(atBats)) {
+            // Synthetic out-only cells (ghost-runner-out) aren't plate appearances
+            if (pa.is_out_only) continue;
             const res = (pa.result || '').toUpperCase();
             const isNotAB = ['BB', 'IBB', 'HP', 'HBP', 'INT'].includes(res)
                 || res.startsWith('SAC') || res.startsWith('SF');

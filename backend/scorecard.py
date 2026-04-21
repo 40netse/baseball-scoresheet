@@ -435,6 +435,13 @@ def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
                     batting_order_seq=seq,
                 ))
 
+    # Build a player_id -> PlayerLine index up-front so the advancement loop
+    # can route ghost-runner-out events to the runner's own row.
+    player_lookup = {}
+    for side_team in [scorecard.away_team, scorecard.home_team]:
+        for pl in side_team.players:
+            player_lookup[pl.player_id] = pl
+
     # Process all plays
     all_plays = plays.get("allPlays", [])
     player_inning_count = {}  # (player_id, inning) -> count
@@ -540,6 +547,29 @@ def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
                 # Update bases_reached so bold lines are drawn on the runner's cell
                 if not adv.is_out and adv.to_base > runner_ab.bases_reached:
                     runner_ab.bases_reached = adv.to_base
+            elif (adv.is_out and runner_id and runner_id in player_lookup
+                  and runner_id != batter_id):
+                # Ghost-runner-out (e.g. extra-innings baserunner put out on a
+                # fly-ball DP). The runner has no tracked plate appearance to
+                # attach to, but their out belongs on THEIR row at this inning
+                # — not the batter's cell. Create a synthetic out-only cell.
+                runner_line = player_lookup[runner_id]
+                synthetic = AtBat(
+                    batter_name=adv.runner_name,
+                    batter_id=runner_id,
+                    inning=inning,
+                    is_out=True,
+                    out_number=adv.out_number,
+                    bases_reached=0,
+                    runner_advancements=[adv],
+                    is_out_only=True,
+                )
+                slot_key = inning
+                offset = 1
+                while slot_key in runner_line.at_bats:
+                    slot_key = inning + offset * 100
+                    offset += 1
+                runner_line.at_bats[slot_key] = synthetic
             else:
                 at_bat.runner_advancements.append(adv)
 
@@ -582,12 +612,8 @@ def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
                     player_line.at_bats[inning + count * 100] = at_bat
                 break
 
-    # Parse defensive switches and set starting positions
-    player_lookup = {}
-    for side_team in [scorecard.away_team, scorecard.home_team]:
-        for pl in side_team.players:
-            player_lookup[pl.player_id] = pl
-
+    # Parse defensive switches and set starting positions.
+    # (player_lookup was built earlier for the advancement loop.)
     for play in all_plays:
         about = play.get("about", {})
         inning = about.get("inning", 0)

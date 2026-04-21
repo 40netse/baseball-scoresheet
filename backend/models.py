@@ -68,6 +68,7 @@ class AtBat:
     pitcher_name: str = ""
     pitches_by_starting_pitcher: int = 0  # pitches attributed to the PA-starting pitcher (stops at mid-PA sub)
     play_index: int = 0       # chronological order within the game (atBatIndex)
+    is_out_only: bool = False  # synthetic cell for a ghost-runner-out (no plate appearance); skip in totals
 
     def to_dict(self):
         return asdict(self)
