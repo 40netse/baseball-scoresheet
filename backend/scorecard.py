@@ -446,17 +446,31 @@ def build_scorecard_from_live_feed(feed_data: dict) -> GameScorecard:
         matchup = play.get("matchup", {})
         batter = matchup.get("batter", {})
         batter_id = batter.get("id", 0)
+        pitcher = matchup.get("pitcher", {})
 
         at_bat = AtBat(
             batter_name=batter.get("fullName", "Unknown"),
             batter_id=batter_id,
             inning=inning,
+            pitcher_id=pitcher.get("id", 0),
+            pitcher_name=pitcher.get("fullName", ""),
+            play_index=at_bat_index,
         )
 
-        # Parse pitches
+        # Parse pitches + count those attributed to the starting pitcher.
+        # If a pitching substitution appears AFTER at least one pitch (mid-PA
+        # change), stop counting for the starting pitcher — those remaining
+        # pitches belong to the reliever.
+        seen_pitch = False
         for event in play.get("playEvents", []):
+            if event.get("type") == "action":
+                details = event.get("details", {})
+                if details.get("eventType") == "pitching_substitution" and seen_pitch:
+                    break
             if event.get("isPitch", False):
                 at_bat.pitches.append(parse_pitch(event))
+                seen_pitch = True
+                at_bat.pitches_by_starting_pitcher += 1
 
         # Parse result
         notation, result_type, hit_type, fielders = translate_play_to_notation(play)
