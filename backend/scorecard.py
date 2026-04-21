@@ -317,6 +317,13 @@ def _parse_runner_advancements(play_data: dict, batter_lineup_num: int) -> list[
             cs_chain = _get_fielder_chain(r.get("credits", []))
             cs_str = "-".join(str(f) for f in cs_chain)
             method = f"CS {cs_str}" if cs_str else "CS"
+        elif is_out and "r_runner_out" in reason:
+            # Runner thrown out on a play that isn't a force — e.g. caught
+            # advancing on a fly ball (8-5 DP), tagged out trying to stretch
+            # a hit. Show the fielding chain from THIS runner's credits.
+            ro_chain = _get_fielder_chain(r.get("credits", []))
+            ro_str = "-".join(str(f) for f in ro_chain)
+            method = ro_str if ro_str else batter_num_str
         elif is_out and "force_out" in reason:
             fo_chain = _get_fielder_chain(r.get("credits", []))
             fo_str = "-".join(str(f) for f in fo_chain)
