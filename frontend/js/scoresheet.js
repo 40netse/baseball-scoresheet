@@ -38,6 +38,7 @@ const SCORE_FILL = '#b22222';  // bold red for scored runs — easy to spot
 const HIT_REACHED = '#2e6b2e'; // green tint for reached-base sidebar highlight
 const REACH_BG = '#d8ecd8';
 const FLASH_BG = '#fff4b0';  // yellow flash for changed cells
+const PITCHER_CHANGE = '#1976d2';  // blue line marking pitching changes
 
 // Which sidebar labels map to which result codes
 const SIDEBAR_LABELS = ['HR', '3B', '2B', '1B', 'SAC', 'HP', 'BB'];
@@ -47,6 +48,56 @@ const REACH_MAP = {
     'HP': 'HP', 'HBP': 'HP',
     'BB': 'BB', 'IBB': 'BB',
 };
+
+/**
+ * Walk at-bats chronologically (by play_index) and derive:
+ *  - changeMarkers: Map<`${batting_order}_${inning}`, { outgoing_total }>
+ *    — cells that should draw a blue pitcher-change line at the bottom, with
+ *      the outgoing pitcher's game-total pitch count.
+ *  - pitcherInningPitches: Map<`${pitcher_id}_${inning}`, pitches>
+ *    — pitches that pitcher threw in that inning only.
+ */
+function computePitchingLayout(players) {
+    const flat = [];
+    for (const p of players) {
+        for (const [innKey, ab] of Object.entries(p.at_bats || {})) {
+            if (!ab || !ab.pitcher_id) continue;
+            flat.push({
+                batting_order: p.batting_order,
+                inning: parseInt(innKey, 10) % 100,
+                ab,
+            });
+        }
+    }
+    flat.sort((a, b) => (a.ab.play_index || 0) - (b.ab.play_index || 0));
+
+    const changeMarkers = new Map();
+    const pitcherInningPitches = new Map();
+    const pitcherGameTotal = new Map();
+
+    for (let i = 0; i < flat.length; i++) {
+        const entry = flat[i];
+        const pid = entry.ab.pitcher_id;
+        const pitches = entry.ab.pitches_by_starting_pitcher || 0;
+
+        pitcherGameTotal.set(pid, (pitcherGameTotal.get(pid) || 0) + pitches);
+
+        const inningKey = `${pid}_${entry.inning}`;
+        pitcherInningPitches.set(inningKey, (pitcherInningPitches.get(inningKey) || 0) + pitches);
+
+        if (i < flat.length - 1) {
+            const nextPid = flat[i + 1].ab.pitcher_id;
+            if (nextPid && nextPid !== pid) {
+                const markerKey = `${entry.batting_order}_${entry.inning}`;
+                changeMarkers.set(markerKey, {
+                    outgoing_total: pitcherGameTotal.get(pid) || 0,
+                });
+            }
+        }
+    }
+
+    return { changeMarkers, pitcherInningPitches };
+}
 
 const ScoresheetRenderer = {
 
@@ -60,6 +111,7 @@ const ScoresheetRenderer = {
         svgEl.innerHTML = '';
 
         const players = teamData.players || [];
+        const pitchingLayout = computePitchingLayout(players);
 
         // Group players by batting order slot (starter + subs together)
         const slotMap = {};
@@ -111,7 +163,7 @@ const ScoresheetRenderer = {
 
         // Player rows (grouped by batting order slot)
         slots.forEach((slot, idx) => {
-            this._drawPlayerRow(contentLayer, slot, idx, numInn, teamData, changedCells);
+            this._drawPlayerRow(contentLayer, slot, idx, numInn, teamData, changedCells, pitchingLayout);
         });
 
         // Grid lines
@@ -175,7 +227,7 @@ const ScoresheetRenderer = {
         return innings.length > 0 ? Math.min(...innings) : 99;
     },
 
-    _drawPlayerRow(layer, slot, rowIdx, numInn, teamData, changedCells) {
+    _drawPlayerRow(layer, slot, rowIdx, numInn, teamData, changedCells, pitchingLayout) {
         // slot = array of players in this batting order position, sorted by seq
         const y = HDR_H + rowIdx * CELL_H;
         const g = this._g(layer, `p${rowIdx}`);
@@ -184,12 +236,19 @@ const ScoresheetRenderer = {
         const hasSub = subs.length > 0;
         const halfH = CELL_H / 2;
 
-        // Figure out sub inning
-        let subInning = null;
-        if (hasSub) {
-            const starterLast = this._lastInning(starter);
-            const subFirst = this._firstInning(subs[0]);
-            subInning = subFirst < 99 ? subFirst : (starterLast > 0 ? starterLast + 1 : null);
+        // Figure out the entry inning for each sub (one vertical red line per
+        // transition). Prefer the sub's first AB inning; fall back to the prior
+        // player's last AB + 1 if the sub never batted.
+        const subInnings = [];
+        for (let i = 1; i < slot.length; i++) {
+            const prev = slot[i - 1];
+            const cur = slot[i];
+            const prevLast = this._lastInning(prev);
+            const curFirst = this._firstInning(cur);
+            const enter = curFirst < 99 ? curFirst : (prevLast > 0 ? prevLast + 1 : null);
+            if (enter && !subInnings.includes(enter)) {
+                subInnings.push(enter);
+            }
         }
 
         // Combine at-bats from starter + subs
@@ -214,41 +273,63 @@ const ScoresheetRenderer = {
         this._txt(g, NUM_COL_W / 2, y + CELL_H / 2 + 5, String(starter.batting_order || ''),
             { anchor: 'middle', size: 14, bold: true });
 
-        if (hasSub) {
-            // ── Split name box: starter on top, sub on bottom ──
-            this._txt(g, NUM_COL_W + 5, y + 18, this._truncName(starter.name), { size: 10 });
-            this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + 18,
-                starter.position || '', { anchor: 'middle', size: 10, bold: true });
-            // Divider across name+pos
-            this._seg(g, [NUM_COL_W, y + halfH], [HEADER_W, y + halfH], ACCENT, 1.5);
-            // Sub name + position in red
-            this._txt(g, NUM_COL_W + 5, y + halfH + 16, this._truncName(subs[0].name),
-                { size: 10, fill: ACCENT });
-            this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + halfH + 16,
-                subs[0].position || '', { anchor: 'middle', size: 10, bold: true, fill: ACCENT });
-            if (subs.length > 1) {
-                this._txt(g, NUM_COL_W + 5, y + halfH + 30, `+${subs.length - 1} more`,
-                    { size: 7, fill: '#999' });
-            }
-        } else {
-            // ── Single player ──
-            this._txt(g, NUM_COL_W + 5, y + 28, this._truncName(starter.name, 16), { size: 11 });
-            if (starter.jersey_number && !posChanges.length) {
-                this._txt(g, NUM_COL_W + 5, y + 42, `#${starter.jersey_number}`, { size: 9, fill: '#999' });
-            }
+        // Name/position panel: up to 4 horizontal sections (starter + first 3
+        // subs); remaining subs get "+N more" in the last visible section.
+        // Jersey # is right-aligned in the name column.
+        const visibleCount = Math.min(slot.length, 4);
+        const sectionH = CELL_H / visibleCount;
+        const overflowCount = slot.length - visibleCount;
 
-            // Position — split if position_changes exist
-            if (posChanges.length > 0) {
-                this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + 22,
-                    starter.position || '', { anchor: 'middle', size: 10, bold: true });
-                this._seg(g, [NUM_COL_W + NAME_COL_W, y + halfH],
-                    [HEADER_W, y + halfH], ACCENT, 1.5);
-                const lastChange = posChanges[posChanges.length - 1];
-                this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + halfH + 18,
-                    lastChange.to_pos || '', { anchor: 'middle', size: 10, bold: true, fill: ACCENT });
-            } else {
-                this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + CELL_H / 2 + 5,
-                    starter.position || '', { anchor: 'middle', size: 13, bold: true });
+        if (visibleCount === 1 && posChanges.length > 0) {
+            // Solo player with a position change — POS-only split (legacy).
+            this._txt(g, NUM_COL_W + 5, y + CELL_H / 2 + 5,
+                this._truncName(starter.name, 14), { size: 11 });
+            if (starter.jersey_number) {
+                this._txt(g, NUM_COL_W + NAME_COL_W - 3, y + CELL_H / 2 + 5,
+                    `#${starter.jersey_number}`,
+                    { anchor: 'end', size: 9, fill: '#999' });
+            }
+            this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + 22,
+                starter.position || '', { anchor: 'middle', size: 10, bold: true });
+            this._seg(g, [NUM_COL_W + NAME_COL_W, y + halfH],
+                [HEADER_W, y + halfH], ACCENT, 1.5);
+            const lastChange = posChanges[posChanges.length - 1];
+            this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, y + halfH + 18,
+                lastChange.to_pos || '',
+                { anchor: 'middle', size: 10, bold: true, fill: ACCENT });
+        } else {
+            for (let i = 0; i < visibleCount; i++) {
+                const player = slot[i];
+                const isStarter = i === 0;
+                const sectionY = y + i * sectionH;
+                const centerY = sectionY + sectionH / 2 + 4;
+                const fill = isStarter ? undefined : ACCENT;
+                const nameSize = visibleCount === 1 ? 11 : visibleCount <= 2 ? 10 : 9;
+                const posSize = visibleCount === 1 ? 13 : visibleCount <= 2 ? 10 : 9;
+                const jerseySize = Math.max(7, nameSize - 1);
+                const maxNameLen = visibleCount === 1 ? 16 : visibleCount <= 2 ? 13 : 11;
+                const showMore = i === visibleCount - 1 && overflowCount > 0;
+
+                if (!isStarter) {
+                    this._seg(g, [NUM_COL_W, sectionY], [HEADER_W, sectionY], ACCENT, 1.5);
+                }
+                const nameOpts = { size: nameSize };
+                if (fill) nameOpts.fill = fill;
+                this._txt(g, NUM_COL_W + 5, centerY,
+                    this._truncName(player.name, maxNameLen), nameOpts);
+                if (player.jersey_number) {
+                    this._txt(g, NUM_COL_W + NAME_COL_W - 3, centerY,
+                        `#${player.jersey_number}`,
+                        { anchor: 'end', size: jerseySize, fill: fill || '#999' });
+                }
+                const posOpts = { anchor: 'middle', size: posSize, bold: true };
+                if (fill) posOpts.fill = fill;
+                this._txt(g, NUM_COL_W + NAME_COL_W + POS_COL_W / 2, centerY,
+                    player.position || '', posOpts);
+                if (showMore) {
+                    this._txt(g, NUM_COL_W + 5, sectionY + sectionH - 2,
+                        `+${overflowCount} more`, { size: 7, fill: '#999' });
+                }
             }
         }
 
@@ -262,54 +343,69 @@ const ScoresheetRenderer = {
                     const flash = this._rect(g, cellX + 1, y + 1, CELL_W - 2, CELL_H - 2, FLASH_BG);
                     flash.setAttribute('class', 'cell-changed');
                 }
-                this._drawAtBat(g, cellX, y, ab, teamData);
+                const markerKey = `${starter.batting_order}_${inn}`;
+                const pitcherChange = pitchingLayout
+                    ? pitchingLayout.changeMarkers.get(markerKey)
+                    : null;
+                const inningPitches = (pitchingLayout && ab.pitcher_id)
+                    ? (pitchingLayout.pitcherInningPitches.get(`${ab.pitcher_id}_${inn}`) || 0)
+                    : 0;
+                this._drawAtBat(g, cellX, y, ab, teamData, pitcherChange, inningPitches);
             }
         }
 
-        // Bold red vertical line at sub/position-change inning boundary
-        if (subInning && subInning >= 1 && subInning <= numInn) {
-            const lx = HEADER_W + (subInning - 1) * CELL_W;
-            this._seg(g, [lx, y + 2], [lx, y + CELL_H - 2], ACCENT, 2.5);
+        // Bold red vertical line at each sub/position-change inning boundary
+        for (const inn of subInnings) {
+            if (inn >= 1 && inn <= numInn) {
+                const lx = HEADER_W + (inn - 1) * CELL_W;
+                this._seg(g, [lx, y + 2], [lx, y + CELL_H - 2], ACCENT, 2.5);
+            }
         }
         for (const pc of posChanges) {
-            if (pc.inning >= 1 && pc.inning <= numInn && pc.inning !== subInning) {
+            if (pc.inning >= 1 && pc.inning <= numInn && !subInnings.includes(pc.inning)) {
                 const lx = HEADER_W + (pc.inning - 1) * CELL_W;
                 this._seg(g, [lx, y + 2], [lx, y + CELL_H - 2], ACCENT, 2.5);
             }
         }
 
-        // Totals — split when sub exists
+        // Totals — split to match the number of visible player sections
         const baseX = HEADER_W + numInn * CELL_W;
-        if (hasSub) {
-            const starterTotals = this._computeTotals(starter);
-            const subTotals = this._computeTotals(subs[0]);
-            starterTotals.forEach((v, i) => {
-                this._txt(g, baseX + i * TOTALS_COL_W + TOTALS_COL_W / 2, y + 22,
-                    String(v), { anchor: 'middle', size: 11, bold: true });
-            });
-            // Divider across totals area
-            for (let i = 0; i < TOTALS_COLS.length; i++) {
-                this._seg(g,
-                    [baseX + i * TOTALS_COL_W + 2, y + halfH],
-                    [baseX + (i + 1) * TOTALS_COL_W - 2, y + halfH],
-                    ACCENT, 1.5);
-            }
-            subTotals.forEach((v, i) => {
-                this._txt(g, baseX + i * TOTALS_COL_W + TOTALS_COL_W / 2, y + halfH + 20,
-                    String(v), { anchor: 'middle', size: 11, bold: true, fill: ACCENT });
-            });
-        } else {
+        if (visibleCount === 1) {
             const vals = this._computeTotals(starter);
             vals.forEach((v, i) => {
                 this._txt(g, baseX + i * TOTALS_COL_W + TOTALS_COL_W / 2, y + CELL_H / 2 + 5,
                     String(v), { anchor: 'middle', size: 13, bold: true });
             });
+        } else {
+            const totalsFontSize = visibleCount <= 2 ? 11 : visibleCount === 3 ? 10 : 9;
+            for (let idx = 0; idx < visibleCount; idx++) {
+                const player = slot[idx];
+                const pTotals = this._computeTotals(player);
+                const sectionY = y + idx * sectionH;
+                const centerY = sectionY + sectionH / 2 + 4;
+                const fill = idx === 0 ? undefined : ACCENT;
+
+                if (idx > 0) {
+                    for (let c = 0; c < TOTALS_COLS.length; c++) {
+                        this._seg(g,
+                            [baseX + c * TOTALS_COL_W + 2, sectionY],
+                            [baseX + (c + 1) * TOTALS_COL_W - 2, sectionY],
+                            ACCENT, 1.5);
+                    }
+                }
+                pTotals.forEach((v, c) => {
+                    const opts = { anchor: 'middle', size: totalsFontSize, bold: true };
+                    if (fill) opts.fill = fill;
+                    this._txt(g, baseX + c * TOTALS_COL_W + TOTALS_COL_W / 2, centerY,
+                        String(v), opts);
+                });
+            }
         }
     },
 
     // ─── AT-BAT CELL ──────────────────────────────────────────
 
-    _drawAtBat(parent, x, y, ab, teamData) {
+    _drawAtBat(parent, x, y, ab, teamData, pitcherChange, inningPitches) {
         const g = this._g(parent);
 
         // Diamond area: offset left to leave room for sidebar
@@ -317,6 +413,17 @@ const ScoresheetRenderer = {
         const cx = x + diamondAreaW / 2;
         const cy = y + CELL_H / 2 - 4;
         const d = DIAMOND_R;
+        const hasRedArrow = ab.is_out && ab.out_number === 3;
+        // Mid-AB pitcher change: outgoing pitcher didn't throw every pitch of the
+        // PA (reliever came in and finished the batter).
+        const totalPitches = (ab.pitches || []).length;
+        const startingPitcherPitches = ab.pitches_by_starting_pitcher || 0;
+        const isMidAbChange = !!pitcherChange && totalPitches > startingPitcherPitches;
+        // When blue + red coincide cleanly, blue replaces red (no arrow).
+        // Stack both only when the reliever recorded the 3rd out (mid-AB change).
+        const blueReplacesRed = hasRedArrow && !!pitcherChange && !isMidAbChange;
+        const stackBlue = hasRedArrow && !!pitcherChange && isMidAbChange;
+        const blueLineY = y + CELL_H - (stackBlue ? 10 : 2);
 
         // Vertices: top=2B, right=1B, bottom=Home, left=3B
         const pts = {
@@ -387,8 +494,10 @@ const ScoresheetRenderer = {
                 anchor: 'middle', size: 12, bold: true, fill: ACCENT
             });
 
-            // End-of-inning arrow: solid line under the cell for 3rd out
-            if (ab.out_number === 3) {
+            // End-of-inning arrow: solid line under the cell for 3rd out.
+            // Suppressed when blue pitcher-change line replaces it (outgoing
+            // pitcher finished the AB AND the inning).
+            if (ab.out_number === 3 && !blueReplacesRed) {
                 const arrowY = y + CELL_H - 2;
                 this._seg(g, [x + 4, arrowY], [x + diamondAreaW - 4, arrowY], ACCENT, 2.5);
                 // Arrowhead
@@ -396,7 +505,22 @@ const ScoresheetRenderer = {
                 this._path(g,
                     `M${ax},${arrowY}L${ax - 6},${arrowY - 4}L${ax - 6},${arrowY + 4}Z`,
                     ACCENT, ACCENT, 0);
+                // Per-inning pitch count just above the red arrow
+                if (inningPitches > 0) {
+                    this._txt(g, x + diamondAreaW - 10, y + CELL_H - 6,
+                        String(inningPitches),
+                        { anchor: 'end', size: 8, bold: true, fill: ACCENT });
+                }
             }
+        }
+
+        // ── Pitcher change: blue horizontal line + outgoing pitcher's game total ──
+        if (pitcherChange) {
+            this._seg(g, [x + 4, blueLineY], [x + diamondAreaW - 4, blueLineY],
+                PITCHER_CHANGE, 2.5);
+            this._txt(g, x + diamondAreaW - 4, blueLineY - 3,
+                String(pitcherChange.outgoing_total),
+                { anchor: 'end', size: 8, bold: true, fill: PITCHER_CHANGE });
         }
 
         // ── Out number from runner advancement (CS/pickoff on this runner's cell) ──
@@ -425,8 +549,8 @@ const ScoresheetRenderer = {
         // ── RBI marks (X's in bottom-left, above pitch boxes) ──
         if (ab.rbi > 0) {
             for (let r = 0; r < Math.min(ab.rbi, 4); r++) {
-                this._txt(g, x + 4 + r * 10, y + 14, 'X', {
-                    size: 10, bold: true, fill: HIT_REACHED
+                this._txt(g, x + 5 + r * 13, y + 16, 'X', {
+                    size: 15, bold: true, fill: ACCENT
                 });
             }
         }
@@ -475,15 +599,23 @@ const ScoresheetRenderer = {
     // ─── PITCH COUNT (B/S/Fouls) ────────────────────────────
 
     _drawPitchBoxes(g, cellX, cellY, pitches) {
-        // Count balls, strikes, fouls from pitch sequence
-        let balls = 0, strikes = 0, fouls = 0;
+        // Walk pitches in order so each foul gets bucketed by the strike count
+        // at the time it occurred. Bucket 0 = before any strike, 1 = after 1
+        // strike, 2 = after 2 strikes (the "fighting off strike 3" case).
+        let balls = 0, strikes = 0;
+        const foulPositions = [];   // { bucket, slot }
+        const bucketSlots = [0, 0, 0];
+        let foulsShown = 0;
         for (const p of pitches) {
             if (p.result === 'B') {
                 balls++;
             } else if (p.result === 'F') {
-                fouls++;
+                if (foulsShown >= 6) continue;  // keep existing display cap
+                const bucket = Math.min(strikes, 2);
+                foulPositions.push({ bucket, slot: bucketSlots[bucket]++ });
+                foulsShown++;
             } else {
-                // S, C, X all count as strikes (up to 2 filled boxes; 3rd ends AB)
+                // S, C, X all count as strikes
                 strikes++;
             }
         }
@@ -521,14 +653,16 @@ const ScoresheetRenderer = {
             size: 6, fill: '#999'
         });
 
-        // Foul slashes
-        if (fouls > 0) {
-            for (let i = 0; i < Math.min(fouls, 6); i++) {
-                const fx = startX + i * 6;
-                this._txt(g, fx, foulY + 6, '/', {
-                    size: 8, fill: '#999'
-                });
-            }
+        // Foul slashes — positioned by strike count when the foul occurred.
+        // Under the 1st/2nd strike box for fouls at 0/1 strikes; spread to the
+        // right of the strike boxes for fouls at 2 strikes.
+        for (const { bucket, slot } of foulPositions) {
+            const fx = bucket < 2
+                ? startX + bucket * (boxSize + gap) + slot * 3
+                : startX + 2 * (boxSize + gap) + 3 + slot * 7;
+            this._txt(g, fx, foulY + 9, '/', {
+                size: 13, bold: true, fill: ACCENT
+            });
         }
     },
 

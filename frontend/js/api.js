@@ -2,8 +2,8 @@
  * API client for the Baseball Scoresheet backend.
  */
 
-const API_BASE = 'http://localhost:8001/api';
-const WS_BASE = 'ws://localhost:8001/ws';
+const API_BASE = `http://${window.location.hostname}:8001/api`;
+const WS_BASE = `ws://${window.location.hostname}:8001/ws`;
 
 const ScoresheetAPI = {
     /**

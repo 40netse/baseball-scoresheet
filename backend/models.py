@@ -64,6 +64,10 @@ class AtBat:
     bases_reached: int = 0    # Furthest base reached by batter (0-4, 4=scored)
     runner_advancements: list[BaseAdvancement] = field(default_factory=list)
     description: str = ""
+    pitcher_id: int = 0
+    pitcher_name: str = ""
+    pitches_by_starting_pitcher: int = 0  # pitches attributed to the PA-starting pitcher (stops at mid-PA sub)
+    play_index: int = 0       # chronological order within the game (atBatIndex)
 
     def to_dict(self):
         return asdict(self)
