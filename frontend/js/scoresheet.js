@@ -202,8 +202,8 @@ const ScoresheetRenderer = {
         const atBats = player.at_bats || {};
         let ab = 0, r = 0, h = 0, rbi = 0;
         for (const [, pa] of Object.entries(atBats)) {
-            // Synthetic out-only cells (ghost-runner-out) aren't plate appearances
-            if (pa.is_out_only) continue;
+            // Synthetic out-only or zombie-runner cells aren't plate appearances
+            if (pa.is_out_only || pa.is_ghost_runner) continue;
             const res = (pa.result || '').toUpperCase();
             const isNotAB = ['BB', 'IBB', 'HP', 'HBP', 'INT'].includes(res)
                 || res.startsWith('SAC') || res.startsWith('SF');
@@ -436,21 +436,41 @@ const ScoresheetRenderer = {
         };
 
         const scored = (ab.bases_reached || 0) >= 4;
+        const isZR = !!ab.is_ghost_runner;
 
-        // Draw diamond — dashed blue by default, solid red fill when scored
+        // Draw diamond — dashed blue by default, solid red fill when scored.
+        // For a ZR who scored, half-shade the bottom (home-1B-3B) triangle to
+        // indicate the run was unearned.
         const dPath = `M${pts.top[0]},${pts.top[1]}L${pts.right[0]},${pts.right[1]}` +
             `L${pts.bot[0]},${pts.bot[1]}L${pts.left[0]},${pts.left[1]}Z`;
         if (scored) {
-            this._path(g, dPath, SCORE_FILL, SCORE_FILL, 2);
+            if (isZR) {
+                const triPath = `M${pts.bot[0]},${pts.bot[1]}L${pts.right[0]},${pts.right[1]}` +
+                    `L${pts.left[0]},${pts.left[1]}Z`;
+                this._path(g, triPath, SCORE_FILL, SCORE_FILL, 1);
+                const diamond = this._path(g, dPath, 'none', '#2266aa', 1.2);
+                diamond.setAttribute('stroke-dasharray', '4,3');
+            } else {
+                this._path(g, dPath, SCORE_FILL, SCORE_FILL, 2);
+            }
         } else {
             const diamond = this._path(g, dPath, 'none', '#2266aa', 1.2);
             diamond.setAttribute('stroke-dasharray', '4,3');
 
-            // Bold black base-path lines where the batter advanced
+            // Bold black base-path lines where the batter advanced.
+            // For a ZR: suppress home->1B and 1B->2B (unearned placement).
             const basesReached = ab.bases_reached || 0;
-            if (basesReached >= 1) this._seg(g, pts.bot, pts.right, INK, 3);
-            if (basesReached >= 2) this._seg(g, pts.right, pts.top, INK, 3);
+            if (!isZR && basesReached >= 1) this._seg(g, pts.bot, pts.right, INK, 3);
+            if (!isZR && basesReached >= 2) this._seg(g, pts.right, pts.top, INK, 3);
             if (basesReached >= 3) this._seg(g, pts.top, pts.left, INK, 3);
+        }
+
+        // Zombie runner marker: blue square at 2B + "ZR" label to the right
+        if (isZR) {
+            this._rect(g, pts.top[0] - 3, pts.top[1] - 3, 6, 6,
+                PITCHER_CHANGE, PITCHER_CHANGE, 0.5);
+            this._txt(g, pts.top[0] + 6, pts.top[1] + 3, 'ZR',
+                { size: 7, bold: true, fill: PITCHER_CHANGE });
         }
 
         // Hit line from home plate into the field
